@@ -1,8 +1,10 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { ThemeProvider } from '@/contexts/ThemeContext';
+import { SiteConfigProvider } from '@/contexts/SiteConfigContext';
 import Layout from '@/components/Layout';
 import RequireAuth from '@/components/RequireAuth';
+import RequireAdmin from '@/components/RequireAdmin';
 import HomePage from '@/pages/HomePage';
 import LoginPage from '@/pages/LoginPage';
 import SignupPage from '@/pages/SignupPage';
@@ -15,6 +17,7 @@ import HistoryPage from '@/pages/HistoryPage';
 import ProfilePage from '@/pages/ProfilePage';
 import DashboardPage from '@/pages/DashboardPage';
 import ReviewMistakesPage from '@/pages/ReviewMistakesPage';
+import AdminPage from '@/pages/admin/AdminPage';
 import MentionsLegalesPage from '@/pages/legal/MentionsLegalesPage';
 import ConfidentialitePage from '@/pages/legal/ConfidentialitePage';
 import CGUPage from '@/pages/legal/CGUPage';
@@ -23,9 +26,10 @@ import CookiesPage from '@/pages/legal/CookiesPage';
 export default function App() {
   return (
     <ThemeProvider>
-      <AuthProvider>
-        <BrowserRouter>
-          <Routes>
+      <SiteConfigProvider>
+        <AuthProvider>
+          <BrowserRouter>
+            <Routes>
           <Route element={<Layout />}>
             <Route index element={<HomePage />} />
             <Route path="login" element={<LoginPage />} />
@@ -89,12 +93,21 @@ export default function App() {
                 </RequireAuth>
               }
             />
+            <Route
+              path="admin"
+              element={
+                <RequireAdmin>
+                  <AdminPage />
+                </RequireAdmin>
+              }
+            />
 
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
-          </Routes>
-        </BrowserRouter>
-      </AuthProvider>
+            </Routes>
+          </BrowserRouter>
+        </AuthProvider>
+      </SiteConfigProvider>
     </ThemeProvider>
   );
 }

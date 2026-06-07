@@ -1,17 +1,24 @@
 import { Outlet, Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
+import { useSiteConfig } from '@/contexts/SiteConfigContext';
 import VerifyEmailBanner from '@/components/VerifyEmailBanner';
 
 export default function Layout() {
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
+  const { config } = useSiteConfig();
   const navigate = useNavigate();
 
   const handleLogout = async () => {
     await logout();
     navigate('/login');
   };
+
+  // Nom de l'app dynamique (admin) : le dernier mot est accentué en ambre.
+  const nameWords = config.app_name.trim().split(' ');
+  const nameHead = nameWords.slice(0, -1).join(' ');
+  const nameTail = nameWords[nameWords.length - 1];
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -23,7 +30,8 @@ export default function Layout() {
               A
             </span>
             <span>
-              EduTutor <span className="text-amber-500">IA</span>
+              {nameHead && <>{nameHead} </>}
+              <span className="text-amber-500">{nameTail}</span>
             </span>
           </Link>
 
@@ -42,6 +50,11 @@ export default function Layout() {
                 <Link to="/history" className="text-slate-700 hover:text-indigo-600">
                   Historique
                 </Link>
+                {user.is_staff && (
+                  <Link to="/admin" className="text-amber-600 font-medium hover:text-amber-700">
+                    Admin
+                  </Link>
+                )}
                 <span className="text-slate-500">|</span>
                 <Link
                   to="/profile"
@@ -70,6 +83,13 @@ export default function Layout() {
         </div>
       </header>
 
+      {/* Bannière globale configurable par l'admin (Lot 8) */}
+      {config.banner_enabled && config.banner_message && (
+        <div className="bg-indigo-600 text-white text-sm">
+          <div className="max-w-6xl mx-auto px-4 py-2 text-center">{config.banner_message}</div>
+        </div>
+      )}
+
       {/* Bandeau d'invitation à confirmer l'email (validation "soft") */}
       <VerifyEmailBanner />
 
@@ -97,7 +117,7 @@ export default function Layout() {
 
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              EduTutor IA — APOCAL'IPSSI 2026 ·
+              {config.app_name} — APOCAL'IPSSI 2026 ·
               <a
                 href="https://mohamedelafrit.com/teaching/Master_Classe_Agile/cours.html"
                 target="_blank"

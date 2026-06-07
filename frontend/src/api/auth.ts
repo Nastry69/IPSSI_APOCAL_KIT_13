@@ -16,6 +16,8 @@ export type User = {
   last_name?: string;
   /** L'utilisateur a-t-il confirmé son adresse email (lien reçu par mail) ? */
   email_verified?: boolean;
+  /** Compte administrateur (accès à la page /admin) ? */
+  is_staff?: boolean;
 };
 
 type LoginResponse = { token: string; user: User };

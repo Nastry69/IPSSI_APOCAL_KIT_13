@@ -2,10 +2,12 @@ import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { signup } from '@/api/auth';
 import { useAuth } from '@/contexts/AuthContext';
+import { useSiteConfig } from '@/contexts/SiteConfigContext';
 import { getApiErrorMessage } from '@/api/errors';
 
 export default function SignupPage() {
   const { refresh } = useAuth();
+  const { config } = useSiteConfig();
   const navigate = useNavigate();
 
   const [email, setEmail] = useState('');
@@ -35,6 +37,24 @@ export default function SignupPage() {
       setLoading(false);
     }
   };
+
+  // L'admin peut fermer les inscriptions (Lot 8).
+  if (!config.allow_signups) {
+    return (
+      <div className="max-w-md mx-auto">
+        <div className="card text-center">
+          <div className="text-4xl mb-3">🔒</div>
+          <h1 className="text-2xl font-bold text-slate-900 mb-2">Inscriptions fermées</h1>
+          <p className="text-sm text-slate-500 mb-4">
+            Les inscriptions sont actuellement désactivées. Revenez plus tard.
+          </p>
+          <Link to="/login" className="text-indigo-600 hover:underline">
+            Déjà un compte ? Se connecter
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-md mx-auto">

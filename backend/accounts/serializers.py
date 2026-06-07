@@ -22,7 +22,7 @@ class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ["id", "username", "email", "first_name", "last_name",
-                  "date_joined", "email_verified"]
+                  "date_joined", "email_verified", "is_staff"]
         read_only_fields = fields
 
     def get_email_verified(self, obj) -> bool:
