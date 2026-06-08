@@ -71,7 +71,7 @@ open http://localhost:8000/api/docs  # Swagger UI
 
 👉 **Démarrage guidé pour les étudiants : [GUIDE-ETUDIANT.md](./GUIDE-ETUDIANT.md)**
 
-Le dossier [`docs/`](./docs) contient 10 fiches thématiques :
+Le dossier [`docs/`](./docs) contient 11 fiches thématiques :
 
 | Fichier | Sujet |
 |---|---|
@@ -85,6 +85,7 @@ Le dossier [`docs/`](./docs) contient 10 fiches thématiques :
 | [07-bonnes-pratiques.md](./docs/07-bonnes-pratiques.md) | ADR, post-mortem, INVEST, MoSCoW + lien cours Agile |
 | [08-mvp2-idees.md](./docs/08-mvp2-idees.md) | Catalogue d'idées MVP2 + méthode de priorisation |
 | [09-admin.md](./docs/09-admin.md) | Interface d'admin : config LLM/app, utilisateurs, données |
+| [10-gestion-projet-github.md](./docs/10-gestion-projet-github.md) | Workflow Git/PR, issues, board GitHub Projects, commits |
 
 ---
 
