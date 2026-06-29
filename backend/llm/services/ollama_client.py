@@ -12,7 +12,7 @@ import requests
 from django.conf import settings
 
 from .base import LLMClient, LLMError
-from .quiz_prompt import QUIZ_JSON_SCHEMA, build_full_prompt, parse_and_validate_quiz
+from .quiz_prompt import QUIZ_JSON_SCHEMA, generate_quiz_robust
 
 
 class OllamaLLMClient(LLMClient):
@@ -29,15 +29,20 @@ class OllamaLLMClient(LLMClient):
         self.timeout = timeout or settings.OLLAMA_TIMEOUT
 
     def generate_quiz(self, source_text: str, title: str) -> list[dict]:
-        # Ollama /api/generate attend UN prompt unique (pas de séparation
-        # system/user) : on concatène donc system + cours via build_full_prompt.
-        prompt = build_full_prompt(source_text, title)
-        raw = self._call_ollama(prompt)
-        return parse_and_validate_quiz(raw)
+        # Boucle de génération robuste mutualisée (perturbation J4 « qualité ») :
+        # récupère les questions valides et ne régénère QUE le manque jusqu'à 10.
+        # Le seul morceau spécifique à Ollama est l'appel brut `_complete`.
+        return generate_quiz_robust(self._complete, source_text, title)
 
     # ----- internals -----
 
-    def _call_ollama(self, prompt: str) -> str:
+    def _complete(self, system: str, user: str) -> str:
+        """Exécute UN appel Ollama et renvoie le texte brut de la réponse.
+
+        Ollama /api/generate attend UN prompt unique (pas de séparation
+        system/user) : on concatène donc les deux.
+        """
+        prompt = f"{system}\n\n{user}"
         try:
             response = requests.post(
                 f"{self.host}/api/generate",
@@ -46,9 +51,9 @@ class OllamaLLMClient(LLMClient):
                     "prompt": prompt,
                     "stream": False,
                     "options": {"temperature": 0.4},  # peu de créativité : on veut du factuel
-                    # Structured output : on passe un JSON SCHEMA (pas juste "json")
-                    # pour CONTRAINDRE le modèle à 4 options/question. Indispensable
-                    # avec un petit modèle local qui dérive sinon du format.
+                    # « Structured output » (Ollama ≥ 0.5.0) : le modèle est
+                    # CONTRAINT au schéma, ce qui supprime à la source l'essentiel
+                    # des sorties mal formées (≠ 4 options, correct_index hors bornes).
                     "format": QUIZ_JSON_SCHEMA,
                 },
                 timeout=self.timeout,
