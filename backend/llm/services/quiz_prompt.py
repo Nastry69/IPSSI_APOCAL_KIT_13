@@ -44,6 +44,36 @@ Format de sortie :
 """
 
 
+# Schéma JSON STRICT de la sortie attendue. Passé à Ollama (champ `format`) en
+# « structured output » : le modèle est CONTRAINT au décodage à produire
+# exactement 4 options par question et un correct_index entre 0 et 3. Sans cela,
+# un petit modèle (Llama 8B) viole régulièrement la consigne « 4 options » et la
+# validation aval rejette tout le quiz (erreur « il faut exactement 4 options »).
+QUIZ_JSON_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "questions": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "prompt": {"type": "string"},
+                    "options": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "minItems": 4,
+                        "maxItems": 4,
+                    },
+                    "correct_index": {"type": "integer", "minimum": 0, "maximum": 3},
+                },
+                "required": ["prompt", "options", "correct_index"],
+            },
+        }
+    },
+    "required": ["questions"],
+}
+
+
 def build_user_prompt(source_text: str, title: str) -> str:
     """Construit le message utilisateur (cours + consigne finale)."""
     truncated = source_text[:MAX_SOURCE_CHARS]

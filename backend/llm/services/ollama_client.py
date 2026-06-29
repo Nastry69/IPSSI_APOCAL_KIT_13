@@ -12,7 +12,7 @@ import requests
 from django.conf import settings
 
 from .base import LLMClient, LLMError
-from .quiz_prompt import build_full_prompt, parse_and_validate_quiz
+from .quiz_prompt import QUIZ_JSON_SCHEMA, build_full_prompt, parse_and_validate_quiz
 
 
 class OllamaLLMClient(LLMClient):
@@ -46,7 +46,10 @@ class OllamaLLMClient(LLMClient):
                     "prompt": prompt,
                     "stream": False,
                     "options": {"temperature": 0.4},  # peu de créativité : on veut du factuel
-                    "format": "json",  # mode JSON strict d'Ollama si supporté
+                    # Structured output : on passe un JSON SCHEMA (pas juste "json")
+                    # pour CONTRAINDRE le modèle à 4 options/question. Indispensable
+                    # avec un petit modèle local qui dérive sinon du format.
+                    "format": QUIZ_JSON_SCHEMA,
                 },
                 timeout=self.timeout,
             )
