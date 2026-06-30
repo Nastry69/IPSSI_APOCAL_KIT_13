@@ -41,9 +41,14 @@ ne respectent pas le schéma.
 **Résultats benchmark** :
 | Métrique | Résultat |
 |---|---|
-| Latence moyenne | Non testé (Docker non disponible en environnement de benchmark) |
-| Taux JSON valide | — |
-| Score qualité (sur 10) | — |
+| Latence moyenne | **485.5 s** (~8 min sur CPU, Docker OVH) |
+| Latence min / max | 419.3 s / 551.6 s |
+| Taux JSON valide | **67 %** (2/3 — 1 timeout sur texte moyen) |
+| Score qualité (sur 10) | **6.5 / 10** |
+| Pertinence | 4.1 / 10 |
+| Formulation | 10.0 / 10 |
+| Diversité lexicale | 7.4 / 10 |
+| Difficulté options | 5.6 / 10 |
 
 ---
 
@@ -190,7 +195,7 @@ ne respectent pas le schéma.
 | Groq | llama-3.3-70b-versatile | **100 %** | **2.4 s** | 1.9 s | 2.7 s | 6.6 | 4.3 | 10.0 | 6.7 | 6.8 | ❌ |
 | Cerebras | gemma-4-31b | **100 %** | 2.6 s | 2.4 s | 3.0 s | 6.6 | 4.4 | 9.7 | **9.4** | 3.8 | ❌ |
 | Gemini | gemini-2.5-flash | 67 % | 17.5 s | 16.6 s | 18.5 s | 7.2* | 5.1 | 10.0 | 7.8 | 7.5 | ❌ |
-| Ollama | llama3.1:8b | — | — | — | — | — | — | — | — | — | ✅ (local) |
+| Ollama | llama3.1:8b | 67 % | 485.5 s | 419.3 s | 551.6 s | 6.5 | 4.1 | 10.0 | 7.4 | 5.6 | ✅ (local) |
 
 _* Gemini : score calculé sur 2/3 runs uniquement (1 erreur 503 sur le texte long)._
 

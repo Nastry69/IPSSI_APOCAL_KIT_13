@@ -1,249 +1,60 @@
 {
   "stats": [
     {
-      "provider": "gemini",
-      "label": "Gemini (gemini-2.5-flash)",
-      "rgpd_eu": false,
-      "total_runs": 3,
-      "success_rate_pct": 67,
-      "latency_avg_s": 17.5,
-      "latency_min_s": 16.6,
-      "latency_max_s": 18.5,
-      "quality_avg": 7.2,
-      "quality_detail": {
-        "pertinence": 5.1,
-        "formulation": 10.0,
-        "diversite": 7.8,
-        "difficulte": 7.5
-      }
-    },
-    {
-      "provider": "mistral",
-      "label": "Mistral (mistral-small-latest)",
+      "provider": "ollama",
+      "label": "Ollama (llama3.1:8b)",
       "rgpd_eu": true,
       "total_runs": 3,
-      "success_rate_pct": 100,
-      "latency_avg_s": 4.0,
-      "latency_min_s": 3.6,
-      "latency_max_s": 4.5,
-      "quality_avg": 7.1,
+      "success_rate_pct": 67,
+      "latency_avg_s": 485.5,
+      "latency_min_s": 419.3,
+      "latency_max_s": 551.6,
+      "quality_avg": 6.5,
       "quality_detail": {
-        "pertinence": 6.1,
+        "pertinence": 4.1,
         "formulation": 10.0,
-        "diversite": 8.4,
-        "difficulte": 3.4
-      }
-    },
-    {
-      "provider": "groq",
-      "label": "Groq (llama-3.3-70b-versatile)",
-      "rgpd_eu": false,
-      "total_runs": 3,
-      "success_rate_pct": 100,
-      "latency_avg_s": 2.4,
-      "latency_min_s": 1.9,
-      "latency_max_s": 2.7,
-      "quality_avg": 6.6,
-      "quality_detail": {
-        "pertinence": 4.3,
-        "formulation": 10.0,
-        "diversite": 6.7,
-        "difficulte": 6.8
-      }
-    },
-    {
-      "provider": "cerebras",
-      "label": "Cerebras (gemma-4-31b)",
-      "rgpd_eu": false,
-      "total_runs": 3,
-      "success_rate_pct": 100,
-      "latency_avg_s": 2.6,
-      "latency_min_s": 2.4,
-      "latency_max_s": 3.0,
-      "quality_avg": 6.6,
-      "quality_detail": {
-        "pertinence": 4.4,
-        "formulation": 9.7,
-        "diversite": 9.4,
-        "difficulte": 3.8
+        "diversite": 7.4,
+        "difficulte": 5.6
       }
     }
   ],
   "raw": [
     {
-      "provider": "groq",
-      "label": "Groq (llama-3.3-70b-versatile)",
-      "rgpd_eu": false,
-      "runs": [
-        {
-          "corpus": "Modèle OSI (court ~500 cars)",
-          "run": 1,
-          "success": true,
-          "latency_s": 1.91,
-          "quality": {
-            "pertinence": 3.8,
-            "formulation": 10.0,
-            "diversite": 6.7,
-            "difficulte": 3.5,
-            "total": 5.9
-          }
-        },
-        {
-          "corpus": "Sécurité des applications web (moyen ~1100 cars)",
-          "run": 1,
-          "success": true,
-          "latency_s": 2.68,
-          "quality": {
-            "pertinence": 3.9,
-            "formulation": 10.0,
-            "diversite": 7.1,
-            "difficulte": 10.0,
-            "total": 7.0
-          }
-        },
-        {
-          "corpus": "Bases de données relationnelles et normalisation (long ~2200 cars)",
-          "run": 1,
-          "success": true,
-          "latency_s": 2.48,
-          "quality": {
-            "pertinence": 5.2,
-            "formulation": 10.0,
-            "diversite": 6.3,
-            "difficulte": 6.9,
-            "total": 6.9
-          }
-        }
-      ]
-    },
-    {
-      "provider": "mistral",
-      "label": "Mistral (mistral-small-latest)",
+      "provider": "ollama",
+      "label": "Ollama (llama3.1:8b)",
       "rgpd_eu": true,
       "runs": [
         {
           "corpus": "Modèle OSI (court ~500 cars)",
           "run": 1,
           "success": true,
-          "latency_s": 3.58,
+          "latency_s": 419.32,
           "quality": {
-            "pertinence": 5.0,
+            "pertinence": 4.3,
             "formulation": 10.0,
-            "diversite": 7.3,
-            "difficulte": 3.4,
-            "total": 6.5
+            "diversite": 6.5,
+            "difficulte": 4.5,
+            "total": 6.2
           }
         },
         {
           "corpus": "Sécurité des applications web (moyen ~1100 cars)",
-          "run": 1,
-          "success": true,
-          "latency_s": 4.47,
-          "quality": {
-            "pertinence": 7.3,
-            "formulation": 10.0,
-            "diversite": 9.0,
-            "difficulte": 4.2,
-            "total": 7.8
-          }
-        },
-        {
-          "corpus": "Bases de données relationnelles et normalisation (long ~2200 cars)",
-          "run": 1,
-          "success": true,
-          "latency_s": 3.85,
-          "quality": {
-            "pertinence": 6.0,
-            "formulation": 10.0,
-            "diversite": 9.0,
-            "difficulte": 2.6,
-            "total": 7.1
-          }
-        }
-      ]
-    },
-    {
-      "provider": "gemini",
-      "label": "Gemini (gemini-2.5-flash)",
-      "rgpd_eu": false,
-      "runs": [
-        {
-          "corpus": "Modèle OSI (court ~500 cars)",
-          "run": 1,
-          "success": true,
-          "latency_s": 16.58,
-          "quality": {
-            "pertinence": 4.9,
-            "formulation": 10.0,
-            "diversite": 7.5,
-            "difficulte": 4.9,
-            "total": 6.7
-          }
-        },
-        {
-          "corpus": "Sécurité des applications web (moyen ~1100 cars)",
-          "run": 1,
-          "success": true,
-          "latency_s": 18.46,
-          "quality": {
-            "pertinence": 5.2,
-            "formulation": 10.0,
-            "diversite": 8.2,
-            "difficulte": 10.0,
-            "total": 7.7
-          }
-        },
-        {
-          "corpus": "Bases de données relationnelles et normalisation (long ~2200 cars)",
           "run": 1,
           "success": false,
-          "latency_s": 9.02,
-          "error": "503 Server Error: Service Unavailable (Gemini API - key redacted)"
-        }
-      ]
-    },
-    {
-      "provider": "cerebras",
-      "label": "Cerebras (gemma-4-31b)",
-      "rgpd_eu": false,
-      "runs": [
+          "latency_s": 600.06,
+          "error": "HTTPConnectionPool(host='localhost', port=11434): Read timed out. (read timeout=600)"
+        },
         {
-          "corpus": "Modèle OSI (court ~500 cars)",
+          "corpus": "Bases de données relationnelles et normalisation (long ~2200 cars)",
           "run": 1,
           "success": true,
-          "latency_s": 2.35,
+          "latency_s": 551.61,
           "quality": {
             "pertinence": 3.9,
             "formulation": 10.0,
-            "diversite": 8.7,
-            "difficulte": 3.6,
-            "total": 6.3
-          }
-        },
-        {
-          "corpus": "Sécurité des applications web (moyen ~1100 cars)",
-          "run": 1,
-          "success": true,
-          "latency_s": 2.99,
-          "quality": {
-            "pertinence": 4.0,
-            "formulation": 10.0,
-            "diversite": 9.7,
-            "difficulte": 4.4,
+            "diversite": 8.3,
+            "difficulte": 6.7,
             "total": 6.7
-          }
-        },
-        {
-          "corpus": "Bases de données relationnelles et normalisation (long ~2200 cars)",
-          "run": 1,
-          "success": true,
-          "latency_s": 2.37,
-          "quality": {
-            "pertinence": 5.3,
-            "formulation": 9.0,
-            "diversite": 9.9,
-            "difficulte": 3.4,
-            "total": 6.9
           }
         }
       ]
