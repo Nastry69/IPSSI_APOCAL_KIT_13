@@ -1,0 +1,69 @@
+{
+  "stats": [
+    {
+      "provider": "ollama",
+      "label": "Ollama (llama3.1:8b)",
+      "rgpd_eu": true,
+      "total_runs": 3,
+      "success_rate_pct": 67,
+      "latency_avg_s": 485.5,
+      "latency_min_s": 419.3,
+      "latency_max_s": 551.6,
+      "quality_avg": 6.5,
+      "quality_detail": {
+        "pertinence": 4.1,
+        "formulation": 10.0,
+        "diversite": 7.4,
+        "difficulte": 5.6
+      }
+    }
+  ],
+  "raw": [
+    {
+      "provider": "ollama",
+      "label": "Ollama (llama3.1:8b)",
+      "rgpd_eu": true,
+      "runs": [
+        {
+          "corpus": "Modèle OSI (court ~500 cars)",
+          "run": 1,
+          "success": true,
+          "latency_s": 419.32,
+          "quality": {
+            "pertinence": 4.3,
+            "formulation": 10.0,
+            "diversite": 6.5,
+            "difficulte": 4.5,
+            "total": 6.2
+          }
+        },
+        {
+          "corpus": "Sécurité des applications web (moyen ~1100 cars)",
+          "run": 1,
+          "success": false,
+          "latency_s": 600.06,
+          "error": "HTTPConnectionPool(host='localhost', port=11434): Read timed out. (read timeout=600)"
+        },
+        {
+          "corpus": "Bases de données relationnelles et normalisation (long ~2200 cars)",
+          "run": 1,
+          "success": true,
+          "latency_s": 551.61,
+          "quality": {
+            "pertinence": 3.9,
+            "formulation": 10.0,
+            "diversite": 8.3,
+            "difficulte": 6.7,
+            "total": 6.7
+          }
+        }
+      ]
+    }
+  ],
+  "corpus": [
+    "Modèle OSI (court ~500 cars)",
+    "Sécurité des applications web (moyen ~1100 cars)",
+    "Bases de données relationnelles et normalisation (long ~2200 cars)"
+  ],
+  "runs_per_corpus": 1
+}
