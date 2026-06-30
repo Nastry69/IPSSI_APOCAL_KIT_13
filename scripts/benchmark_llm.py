@@ -183,6 +183,8 @@ def _call_openai_compat(source_text: str, title: str, cfg: dict) -> list[dict]:
 
 
 def _call_gemini(source_text: str, title: str, cfg: dict) -> list[dict]:
+    # Pause pour respecter le rate limit du free tier Gemini (15 req/min)
+    time.sleep(cfg.get("delay_s", 6))
     url = (
         f"https://generativelanguage.googleapis.com/v1beta/models/"
         f"{cfg['model']}:generateContent?key={cfg['api_key']}"
@@ -242,13 +244,14 @@ def get_provider_configs() -> dict[str, dict]:
             },
         },
         "gemini": {
-            "label": f"Gemini ({e('GEMINI_MODEL','gemini-1.5-flash')})",
+            "label": f"Gemini ({e('GEMINI_MODEL','gemini-2.5-flash')})",
             "rgpd_eu": False,
             "call": _call_gemini,
             "cfg": {
                 "api_key": e("GEMINI_API_KEY", ""),
-                "model": e("GEMINI_MODEL", "gemini-1.5-flash"),
+                "model": e("GEMINI_MODEL", "gemini-2.5-flash"),
                 "timeout": int(e("LLM_API_TIMEOUT", "60")),
+                "delay_s": 6,
             },
         },
         "cerebras": {
