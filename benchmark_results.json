@@ -1,0 +1,129 @@
+{
+  "stats": [
+    {
+      "provider": "ollama",
+      "label": "Ollama (llama3.1:8b)",
+      "rgpd_eu": true,
+      "total_runs": 3,
+      "success_rate_pct": 0,
+      "latency_avg_s": null,
+      "latency_min_s": null,
+      "latency_max_s": null,
+      "quality_avg": null,
+      "quality_detail": null,
+      "error": "Tous les runs ont échoué"
+    },
+    {
+      "provider": "groq",
+      "label": "Groq (llama-3.3-70b-versatile)",
+      "rgpd_eu": false,
+      "total_runs": 0,
+      "success_rate_pct": 0,
+      "latency_avg_s": null,
+      "latency_min_s": null,
+      "latency_max_s": null,
+      "quality_avg": null,
+      "quality_detail": null,
+      "error": "Clé API manquante — définissez GROQ_API_KEY"
+    },
+    {
+      "provider": "mistral",
+      "label": "Mistral (mistral-small-latest)",
+      "rgpd_eu": false,
+      "total_runs": 0,
+      "success_rate_pct": 0,
+      "latency_avg_s": null,
+      "latency_min_s": null,
+      "latency_max_s": null,
+      "quality_avg": null,
+      "quality_detail": null,
+      "error": "Clé API manquante — définissez MISTRAL_API_KEY"
+    },
+    {
+      "provider": "gemini",
+      "label": "Gemini (gemini-1.5-flash)",
+      "rgpd_eu": false,
+      "total_runs": 0,
+      "success_rate_pct": 0,
+      "latency_avg_s": null,
+      "latency_min_s": null,
+      "latency_max_s": null,
+      "quality_avg": null,
+      "quality_detail": null,
+      "error": "Clé API manquante — définissez GEMINI_API_KEY"
+    },
+    {
+      "provider": "cerebras",
+      "label": "Cerebras (llama-3.3-70b)",
+      "rgpd_eu": false,
+      "total_runs": 0,
+      "success_rate_pct": 0,
+      "latency_avg_s": null,
+      "latency_min_s": null,
+      "latency_max_s": null,
+      "quality_avg": null,
+      "quality_detail": null,
+      "error": "Clé API manquante — définissez CEREBRAS_API_KEY"
+    }
+  ],
+  "raw": [
+    {
+      "provider": "ollama",
+      "label": "Ollama (llama3.1:8b)",
+      "rgpd_eu": true,
+      "runs": [
+        {
+          "corpus": "Modèle OSI (court ~500 cars)",
+          "run": 1,
+          "success": false,
+          "latency_s": 4.12,
+          "error": "HTTPConnectionPool(host='localhost', port=11434): Max retries exceeded with url: /api/generate (Caused by NewConnectionError(\"HTTPConnection(host='localhost', port=11434): Failed to establish a new connection: [WinError 10061] Aucune connexion n’a pu être établie car l’ordinateur cible l’a expressément refusée\"))"
+        },
+        {
+          "corpus": "Sécurité des applications web (moyen ~1100 cars)",
+          "run": 1,
+          "success": false,
+          "latency_s": 4.1,
+          "error": "HTTPConnectionPool(host='localhost', port=11434): Max retries exceeded with url: /api/generate (Caused by NewConnectionError(\"HTTPConnection(host='localhost', port=11434): Failed to establish a new connection: [WinError 10061] Aucune connexion n’a pu être établie car l’ordinateur cible l’a expressément refusée\"))"
+        },
+        {
+          "corpus": "Bases de données relationnelles et normalisation (long ~2200 cars)",
+          "run": 1,
+          "success": false,
+          "latency_s": 4.06,
+          "error": "HTTPConnectionPool(host='localhost', port=11434): Max retries exceeded with url: /api/generate (Caused by NewConnectionError(\"HTTPConnection(host='localhost', port=11434): Failed to establish a new connection: [WinError 10061] Aucune connexion n’a pu être établie car l’ordinateur cible l’a expressément refusée\"))"
+        }
+      ]
+    },
+    {
+      "provider": "groq",
+      "label": "Groq (llama-3.3-70b-versatile)",
+      "error": "Clé API manquante — définissez GROQ_API_KEY",
+      "runs": []
+    },
+    {
+      "provider": "mistral",
+      "label": "Mistral (mistral-small-latest)",
+      "error": "Clé API manquante — définissez MISTRAL_API_KEY",
+      "runs": []
+    },
+    {
+      "provider": "gemini",
+      "label": "Gemini (gemini-1.5-flash)",
+      "error": "Clé API manquante — définissez GEMINI_API_KEY",
+      "runs": []
+    },
+    {
+      "provider": "cerebras",
+      "label": "Cerebras (llama-3.3-70b)",
+      "error": "Clé API manquante — définissez CEREBRAS_API_KEY",
+      "runs": []
+    }
+  ],
+  "corpus": [
+    "Modèle OSI (court ~500 cars)",
+    "Sécurité des applications web (moyen ~1100 cars)",
+    "Bases de données relationnelles et normalisation (long ~2200 cars)"
+  ],
+  "runs_per_corpus": 1
+}
