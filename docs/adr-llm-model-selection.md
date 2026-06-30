@@ -29,6 +29,19 @@ ne respectent pas le schéma.
 
 ### Option 1 : Ollama — `llama3.1:8b` (local)
 
+**Spécifications techniques** :
+| Composant | Minimum | Recommandé |
+|---|---|---|
+| RAM système | 8 Go | 16 Go |
+| VRAM GPU | — (CPU possible) | 8 Go (NVIDIA CUDA / Apple Metal) |
+| Stockage | 5 Go (poids du modèle) | 10 Go (modèle + swap) |
+| CPU | x86_64 ou ARM64 | 8 cœurs+ |
+| GPU | Optionnel | NVIDIA RTX 3060+ / Apple M1+ |
+| OS | Linux / macOS / Windows | Linux (Docker) |
+
+> Sans GPU : génération en **7-9 min** sur CPU (observé en benchmark).
+> Avec GPU 8 Go VRAM : génération estimée à **15-30 s** (tokens/s ×10-20).
+
 **Avantages** :
 - Gratuit, données restent sur le serveur (RGPD natif)
 - Aucune dépendance externe / pas de rate limit
@@ -53,6 +66,16 @@ ne respectent pas le schéma.
 ---
 
 ### Option 2 : Groq — `llama-3.3-70b-versatile`
+
+**Spécifications techniques** :
+| Composant | Détail |
+|---|---|
+| Infrastructure | LPU (Language Processing Unit) propriétaire Groq |
+| RAM / GPU requis côté client | **Aucun** — API cloud |
+| Taille du modèle | 70 milliards de paramètres (hébergé par Groq) |
+| Connexion requise | Internet + clé API (`GROQ_API_KEY`) |
+| Limites free tier | ~30 requêtes/min, 6 000 tokens/min |
+| Localisation serveurs | États-Unis (hors UE) |
 
 **Avantages** :
 - Inférence ultra-rapide (hardware Groq custom LPU)
@@ -80,6 +103,16 @@ ne respectent pas le schéma.
 
 ### Option 3 : Mistral AI — `mistral-small-latest`
 
+**Spécifications techniques** :
+| Composant | Détail |
+|---|---|
+| Infrastructure | Serveurs Mistral AI (France / UE) |
+| RAM / GPU requis côté client | **Aucun** — API cloud |
+| Taille du modèle | ~22 milliards de paramètres (hébergé par Mistral) |
+| Connexion requise | Internet + clé API (`MISTRAL_API_KEY`) |
+| Limites free tier | 1 req/s, 500 000 tokens/mois |
+| Localisation serveurs | **France / Union Européenne** (conformité RGPD) |
+
 **Avantages** :
 - Fournisseur français, données traitées en UE (RGPD)
 - Free tier disponible
@@ -105,6 +138,17 @@ ne respectent pas le schéma.
 ---
 
 ### Option 4 : Gemini — `gemini-2.5-flash`
+
+**Spécifications techniques** :
+| Composant | Détail |
+|---|---|
+| Infrastructure | Google Cloud (TPU v5p propriétaires) |
+| RAM / GPU requis côté client | **Aucun** — API cloud |
+| Taille du modèle | Non divulguée (architecture MoE, multimodale) |
+| Connexion requise | Internet + clé API (`GEMINI_API_KEY`) |
+| Limites free tier | **15 requêtes/min**, 1 500 req/jour, 1 M tokens/min |
+| Localisation serveurs | États-Unis / mondial (hors UE) |
+| Fenêtre de contexte | 1 million de tokens (idéal pour PDF très denses) |
 
 **Avantages** :
 - Clé gratuite sans carte bancaire (Google AI Studio)
@@ -132,6 +176,17 @@ ne respectent pas le schéma.
 ---
 
 ### Option 5 : Cerebras — `gemma-4-31b`
+
+**Spécifications techniques** :
+| Composant | Détail |
+|---|---|
+| Infrastructure | Cerebras CS-3 (wafer-scale engine — puce entière de 900 000 cœurs) |
+| RAM / GPU requis côté client | **Aucun** — API cloud |
+| Taille du modèle | 31 milliards de paramètres (Google Gemma 4) |
+| Connexion requise | Internet + clé API (`CEREBRAS_API_KEY`) |
+| Limites free tier | 30 req/min, 60 000 tokens/min |
+| Localisation serveurs | États-Unis (hors UE) |
+| Vitesse d'inférence | ~2 100 tokens/s (la plus rapide du benchmark) |
 
 **Avantages** :
 - Inférence la plus rapide du benchmark : **1.2 s** en moyenne
