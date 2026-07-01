@@ -18,6 +18,7 @@ from django.conf import settings
 
 from .base import LLMClient, LLMError
 from .quiz_prompt import SYSTEM_PROMPT, build_user_prompt, parse_and_validate_quiz
+from .study_prompt import build_study_user_prompt, system_prompt_for
 
 
 class OpenAICompatibleClient(LLMClient):
@@ -64,17 +65,27 @@ class OpenAICompatibleClient(LLMClient):
             difficulty=difficulty,
             theme=theme,
         )
-        raw = self._call(user_prompt)
+        raw = self._call(SYSTEM_PROMPT, user_prompt, json_mode=self.json_mode)
         return parse_and_validate_quiz(raw, expected_count=num_questions)
+
+    def generate_text(self, source_text: str, title: str, kind: str) -> str:
+        # Génération de TEXTE libre (markdown) : PAS de mode JSON strict.
+        try:
+            system = system_prompt_for(kind)
+        except KeyError as exc:
+            raise LLMError(f"kind inconnu : {kind!r} (attendu 'note' | 'summary').") from exc
+        user_prompt = build_study_user_prompt(source_text, title, kind)
+        raw = self._call(system, user_prompt, json_mode=False)
+        return raw.strip()
 
     # ----- internals -----
 
-    def _call(self, user_prompt: str) -> str:
+    def _call(self, system_prompt: str, user_prompt: str, *, json_mode: bool) -> str:
         payload = {
             "model": self.model,
             # Séparation system / user (défense de base contre l'injection, cf. J3).
             "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
             "temperature": 0.4,
@@ -82,7 +93,8 @@ class OpenAICompatibleClient(LLMClient):
         # La plupart des fournisseurs supportent le mode JSON strict ; certains
         # modèles (via OpenRouter) non -> on le rend désactivable. Dans tous les
         # cas, parse_and_validate_quiz sait extraire le JSON même entouré de texte.
-        if self.json_mode:
+        # En génération de texte libre, on ne demande PAS de JSON.
+        if json_mode:
             payload["response_format"] = {"type": "json_object"}
 
         headers = {

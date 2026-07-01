@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Answer, Attempt, Classroom, Course, Question, Quiz
+from .models import Answer, Attempt, Classroom, Course, Question, Quiz, StudyDoc
 
 
 class QuestionInline(admin.TabularInline):
@@ -47,3 +47,10 @@ class AttemptAdmin(admin.ModelAdmin):
 class AnswerAdmin(admin.ModelAdmin):
     list_display = ["attempt", "question", "is_correct"]
     list_filter = ["is_correct"]
+
+
+@admin.register(StudyDoc)
+class StudyDocAdmin(admin.ModelAdmin):
+    list_display = ["title", "kind", "owner", "created_at"]
+    list_filter = ["kind", "created_at"]
+    search_fields = ["title", "content"]

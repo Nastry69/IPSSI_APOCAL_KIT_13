@@ -1,9 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { listQuizzes, type QuizSummary } from '@/api/quizzes';
+import AttemptsHistory from '@/components/AttemptsHistory';
+
+type Tab = 'quizzes' | 'attempts';
 
 export default function HistoryPage() {
   const [quizzes, setQuizzes] = useState<QuizSummary[]>([]);
+  const [tab, setTab] = useState<Tab>('quizzes');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -16,6 +20,9 @@ export default function HistoryPage() {
 
   if (loading) return <p className="text-slate-500">Chargement…</p>;
   if (error) return <p className="text-rose-600">{error}</p>;
+
+  // Seuls les quiz déjà passés ont des tentatives à afficher.
+  const takenQuizzes = quizzes.filter((q) => q.score !== null);
 
   return (
     <div className="space-y-4">
@@ -33,7 +40,35 @@ export default function HistoryPage() {
         </Link>
       </div>
 
-      {quizzes.length === 0 ? (
+      {/* Onglets : liste des quiz / tentatives */}
+      <div className="flex gap-2 border-b border-slate-200">
+        <button
+          type="button"
+          onClick={() => setTab('quizzes')}
+          className={`px-3 py-2 text-sm font-medium -mb-px border-b-2 transition ${
+            tab === 'quizzes'
+              ? 'border-indigo-500 text-indigo-600'
+              : 'border-transparent text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          Mes quiz
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab('attempts')}
+          className={`px-3 py-2 text-sm font-medium -mb-px border-b-2 transition ${
+            tab === 'attempts'
+              ? 'border-indigo-500 text-indigo-600'
+              : 'border-transparent text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          Tentatives
+        </button>
+      </div>
+
+      {tab === 'attempts' ? (
+        <AttemptsHistory quizzes={takenQuizzes} />
+      ) : quizzes.length === 0 ? (
         <div className="card text-center py-12">
           <div className="text-5xl mb-4">📚</div>
           <p className="text-slate-600 mb-4">Pas encore de quiz dans votre historique.</p>

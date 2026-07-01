@@ -204,6 +204,43 @@ class Course(models.Model):
         return f"{self.title} — {self.owner.username}"
 
 
+class StudyDoc(models.Model):
+    """Document de révision généré par le LLM à partir d'un cours.
+
+    Deux formats (Release 2, en plus du quiz) : une « fiche de révision »
+    (kind=NOTE) et un « résumé » (kind=SUMMARY). Le contenu est du texte
+    libre / markdown produit par le LLM, contrairement au quiz qui est un
+    JSON structuré (Quiz + Question).
+    """
+
+    class Kind(models.TextChoices):
+        NOTE = "note", "Fiche de révision"
+        SUMMARY = "summary", "Résumé"
+
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="study_docs",
+        help_text="Propriétaire du document de révision.",
+    )
+    kind = models.CharField(
+        max_length=10,
+        choices=Kind.choices,
+        help_text="Format du document : fiche de révision ou résumé.",
+    )
+    title = models.CharField(max_length=200, help_text="Titre du cours / document.")
+    content = models.TextField(help_text="Contenu généré (texte / markdown).")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "Document de révision"
+        verbose_name_plural = "Documents de révision"
+
+    def __str__(self) -> str:
+        return f"{self.get_kind_display()} — {self.title} ({self.owner.username})"
+
+
 class Attempt(models.Model):
     """Tentative d'un élève sur un quiz — permet le retest et l'historique par barre.
 

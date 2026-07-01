@@ -42,6 +42,10 @@ export type AnswerResult = {
   score: number;
   total: number;
   details: AnswerDetail[];
+  /** Identifiant de la tentative enregistrée (Release 2). */
+  attempt_id: number;
+  /** Numéro de la tentative pour ce quiz (1, 2, 3…). */
+  number: number;
 };
 
 export async function listQuizzes(): Promise<PaginatedQuizzes> {
@@ -57,8 +61,18 @@ export async function getQuiz(id: number): Promise<Quiz> {
 export async function submitAnswers(
   quizId: number,
   answers: { index: number; selected_index: number }[],
+  /**
+   * Ordre d'affichage des questions (liste d'index). Optionnel : utilisé par le
+   * mode « Refaire mélangé » (Release 2) pour tracer l'ordre présenté au candidat.
+   */
+  questionOrder?: number[],
 ): Promise<AnswerResult> {
-  const { data } = await api.post<AnswerResult>(`/quizzes/${quizId}/answer/`, { answers });
+  const body: {
+    answers: { index: number; selected_index: number }[];
+    question_order?: number[];
+  } = { answers };
+  if (questionOrder) body.question_order = questionOrder;
+  const { data } = await api.post<AnswerResult>(`/quizzes/${quizId}/answer/`, body);
   return data;
 }
 
@@ -104,5 +118,51 @@ export async function getStats(): Promise<Stats> {
 /** Liste des questions ratées (pour la révision des erreurs). */
 export async function getMistakes(): Promise<{ count: number; mistakes: Mistake[] }> {
   const { data } = await api.get<{ count: number; mistakes: Mistake[] }>('/quizzes/mistakes/');
+  return data;
+}
+
+// ---------------------------------------------------------------------------
+// Release 2 — Historique des tentatives & retest mélangé
+// ---------------------------------------------------------------------------
+
+/** Résumé d'une tentative (une ligne de l'historique d'un quiz). */
+export type Attempt = {
+  id: number;
+  /** Numéro de la tentative pour ce quiz (1, 2, 3…). */
+  number: number;
+  score: number;
+  total: number;
+  created_at: string;
+};
+
+/** Une réponse rejouée dans le détail d'une tentative. */
+export type AttemptAnswer = {
+  index: number;
+  prompt: string;
+  options: string[];
+  correct_index: number;
+  selected_index: number;
+  is_correct: boolean;
+};
+
+/** Détail complet d'une tentative (pour la rejouer avec corrections). */
+export type AttemptDetail = {
+  id: number;
+  number: number;
+  score: number;
+  total: number;
+  created_at: string;
+  answers: AttemptAnswer[];
+};
+
+/** Liste des tentatives d'un quiz (les plus récentes d'abord). */
+export async function getAttempts(quizId: number): Promise<Attempt[]> {
+  const { data } = await api.get<Attempt[]>(`/quizzes/${quizId}/attempts/`);
+  return data;
+}
+
+/** Détail d'une tentative précise, avec les réponses corrigées. */
+export async function getAttemptDetail(quizId: number, attemptId: number): Promise<AttemptDetail> {
+  const { data } = await api.get<AttemptDetail>(`/quizzes/${quizId}/attempts/${attemptId}/`);
   return data;
 }
