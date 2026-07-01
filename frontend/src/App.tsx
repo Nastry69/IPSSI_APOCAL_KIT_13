@@ -19,6 +19,7 @@ import HistoryPage from '@/pages/HistoryPage';
 import ProfilePage from '@/pages/ProfilePage';
 import DashboardPage from '@/pages/DashboardPage';
 import ReviewMistakesPage from '@/pages/ReviewMistakesPage';
+import ReviewHubPage from '@/pages/ReviewHubPage';
 import TeacherPage from '@/pages/TeacherPage';
 import AdminPage from '@/pages/admin/AdminPage';
 import MentionsLegalesPage from '@/pages/legal/MentionsLegalesPage';
@@ -109,6 +110,14 @@ export default function App() {
                   element={
                     <RequireAuth>
                       <ReviewMistakesPage />
+                    </RequireAuth>
+                  }
+                />
+                <Route
+                  path="review-hub"
+                  element={
+                    <RequireAuth>
+                      <ReviewHubPage />
                     </RequireAuth>
                   }
                 />

@@ -1,14 +1,16 @@
 """
 Endpoints quizz :
     GET   /api/quizzes/                — historique du user connecté
-    GET   /api/quizzes/<id>/           — détail (avec les 10 questions)
-    POST  /api/quizzes/<id>/answer/    — soumet 10 réponses, renvoie le score
+    GET   /api/quizzes/<id>/           — détail (avec toutes les questions)
+    POST  /api/quizzes/<id>/answer/    — soumet N réponses (N = nb réel de
+                                         questions du quiz), renvoie le score /N
 """
 
 import secrets
 
+from django.contrib.auth import get_user_model
 from django.db import transaction
-from django.db.models import Avg, Count, F, Max
+from django.db.models import Avg, Count, F, Max, Q
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework import generics, status
@@ -20,10 +22,12 @@ from accounts.permissions import IsTeacher
 
 from .models import Answer, Attempt, Classroom, Question, Quiz
 from .serializers import (
+    AddStudentSerializer,
     AttemptDetailSerializer,
     AttemptListSerializer,
     ClassProgressStudentSerializer,
     ClassroomCreateSerializer,
+    ClassroomRenameSerializer,
     ClassroomSerializer,
     JoinClassSerializer,
     QuizSerializer,
@@ -31,6 +35,8 @@ from .serializers import (
     StudentIdentitySerializer,
     SubmitAnswersSerializer,
 )
+
+User = get_user_model()
 
 
 class QuizListView(generics.ListAPIView):
@@ -48,7 +54,7 @@ class QuizListView(generics.ListAPIView):
 
 
 class QuizDetailView(generics.RetrieveAPIView):
-    """Détail d'un quiz (les 10 questions complètes)."""
+    """Détail d'un quiz (toutes ses questions complètes)."""
 
     serializer_class = QuizSerializer
     permission_classes = [IsAuthenticated]
@@ -58,7 +64,8 @@ class QuizDetailView(generics.RetrieveAPIView):
 
 
 class AnswerQuizView(APIView):
-    """Reçoit 10 réponses, calcule le score, met à jour le quiz."""
+    """Reçoit N réponses (N = nombre réel de questions du quiz), calcule le
+    score, met à jour le quiz."""
 
     permission_classes = [IsAuthenticated]
 
@@ -66,19 +73,15 @@ class AnswerQuizView(APIView):
         request=SubmitAnswersSerializer,
         responses={200: OpenApiResponse(description="{ score, total, details }")},
         description=(
-            "Soumet les 10 réponses et reçoit le détail de la correction. "
-            "Le score est persisté sur le quiz."
+            "Soumet exactement N réponses (N = nombre réel de questions du quiz, "
+            "de 5 à 20) et reçoit le détail de la correction. Le score /N est "
+            "persisté sur le quiz."
         ),
     )
     def post(self, request, pk: int):
         quiz = get_object_or_404(Quiz, pk=pk, user=request.user)
 
-        serializer = SubmitAnswersSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        answers = serializer.validated_data["answers"]
-        question_order = serializer.validated_data.get("question_order")
-
-        # Index pour lookup rapide
+        # Index pour lookup rapide + nombre RÉEL de questions du quiz.
         questions_by_idx = {q.index: q for q in quiz.questions.all()}
         expected = len(questions_by_idx)
         if expected == 0:
@@ -87,7 +90,18 @@ class AnswerQuizView(APIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
-        # Le nombre de réponses doit couvrir exactement les questions 1..expected.
+        # On transmet le nombre attendu au serializer via le contexte : la
+        # validation « exactement N réponses couvrant 1..N » se base sur le
+        # nombre réel de questions, jamais sur une constante.
+        serializer = SubmitAnswersSerializer(
+            data=request.data, context={"expected_count": expected}
+        )
+        serializer.is_valid(raise_exception=True)
+        answers = serializer.validated_data["answers"]
+        question_order = serializer.validated_data.get("question_order")
+
+        # Contrôle final défensif (au cas où le serializer serait appelé sans
+        # contexte) : les réponses couvrent exactement les questions 1..expected.
         submitted = sorted(a["index"] for a in answers)
         if submitted != list(range(1, expected + 1)):
             return Response(
@@ -365,7 +379,12 @@ class JoinClassView(APIView):
 
 
 class ClassroomDetailView(APIView):
-    """GET : détail d'une classe + liste des élèves (enseignant propriétaire)."""
+    """Gestion d'une classe par son enseignant PROPRIÉTAIRE (404 sinon).
+
+    GET    : détail d'une classe + liste des élèves.
+    PATCH  : renomme la classe (body { name } — alias { title }).
+    DELETE : supprime la classe.
+    """
 
     permission_classes = [IsAuthenticated, IsTeacher]
 
@@ -382,6 +401,84 @@ class ClassroomDetailView(APIView):
             for s in classroom.students.all()
         ]
         return Response(data)
+
+    @extend_schema(request=ClassroomRenameSerializer, responses={200: ClassroomSerializer})
+    def patch(self, request, pk: int):
+        # 404 si la classe n'appartient pas à l'enseignant connecté (ne divulgue
+        # pas l'existence d'une classe d'un autre prof).
+        classroom = get_object_or_404(Classroom, pk=pk, teacher=request.user)
+        serializer = ClassroomRenameSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        classroom.name = serializer.validated_data["name"]
+        classroom.save(update_fields=["name"])
+        return Response(ClassroomSerializer(classroom).data)
+
+    @extend_schema(responses={204: OpenApiResponse(description="Classe supprimée")})
+    def delete(self, request, pk: int):
+        classroom = get_object_or_404(Classroom, pk=pk, teacher=request.user)
+        classroom.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class ClassStudentsView(APIView):
+    """POST /api/classes/<pk>/students/ — ajoute un élève à la classe par son
+    email OU username (body { identifier }).
+
+    Réservé à l'enseignant PROPRIÉTAIRE de la classe (404 sinon). 404 aussi si
+    l'utilisateur ciblé n'existe pas ou n'est pas un élève.
+    """
+
+    permission_classes = [IsAuthenticated, IsTeacher]
+
+    @extend_schema(
+        request=AddStudentSerializer,
+        responses={200: OpenApiResponse(description="Classe + élèves")},
+    )
+    def post(self, request, pk: int):
+        classroom = get_object_or_404(Classroom, pk=pk, teacher=request.user)
+        serializer = AddStudentSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        identifier = serializer.validated_data["identifier"]
+
+        # Résolution par email OU username (insensible à la casse sur l'email).
+        student = User.objects.filter(Q(email__iexact=identifier) | Q(username=identifier)).first()
+        if student is None or not getattr(student, "is_student", False):
+            # 404 : l'utilisateur n'existe pas OU n'est pas un élève (on ne
+            # distingue pas les deux cas pour ne rien divulguer).
+            return Response(
+                {"detail": "Aucun élève ne correspond à cet identifiant."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        classroom.students.add(student)
+        data = ClassroomSerializer(classroom).data
+        data["students"] = [
+            {
+                "id": s.id,
+                "name": s.get_full_name() or s.username,
+                "email": s.email,
+            }
+            for s in classroom.students.all()
+        ]
+        return Response(data)
+
+
+class ClassStudentDetailView(APIView):
+    """DELETE /api/classes/<pk>/students/<student_id>/ — retire un élève de la
+    classe. Réservé à l'enseignant PROPRIÉTAIRE de la classe (404 sinon)."""
+
+    permission_classes = [IsAuthenticated, IsTeacher]
+
+    @extend_schema(responses={204: OpenApiResponse(description="Élève retiré")})
+    def delete(self, request, pk: int, student_id: int):
+        classroom = get_object_or_404(Classroom, pk=pk, teacher=request.user)
+        if not classroom.students.filter(pk=student_id).exists():
+            return Response(
+                {"detail": "Élève introuvable dans cette classe."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        classroom.students.remove(student_id)
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 # ---------------------------------------------------------------------------

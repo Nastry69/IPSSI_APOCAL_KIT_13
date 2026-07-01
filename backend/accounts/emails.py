@@ -98,21 +98,3 @@ def send_password_reset_email(user) -> None:
         "— L'équipe EduTutor IA"
     )
     send_email(user.email, "Réinitialisation de votre mot de passe — EduTutor IA", body)
-
-
-def send_export_email(user, download_url: str) -> None:
-    """Email contenant le lien de téléchargement de l'export RGPD (valable 1 h)."""
-    body = (
-        "Bonjour,\n\n"
-        "Vous avez demandé une copie de vos données personnelles EduTutor IA "
-        "(droit à la portabilité). Cliquez sur le lien ci-dessous pour "
-        "télécharger votre fichier :\n\n"
-        f"{download_url}\n\n"
-        "Ce lien est valable 1 heure et n'est utilisable que par vous. "
-        "Le fichier est au format JSON et contient votre compte, votre profil, "
-        "vos quiz et l'historique de vos réponses.\n\n"
-        "Si vous n'êtes pas à l'origine de cette demande, ignorez simplement cet "
-        "email.\n\n"
-        "— L'équipe EduTutor IA"
-    )
-    send_email(user.email, "Vos données EduTutor IA (export RGPD)", body)

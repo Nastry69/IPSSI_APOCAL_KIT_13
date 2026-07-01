@@ -108,3 +108,23 @@ export async function getStudyDoc(id: number): Promise<StudyDoc> {
   const { data } = await api.get<StudyDoc>(`/llm/study-docs/${id}/`);
   return data;
 }
+
+/**
+ * Résumé d'un document d'étude (une ligne de liste, sans le `content`).
+ * Renvoyé par `GET /llm/study-docs/` pour l'écran « Réviser » (Release 3).
+ */
+export type StudyDocSummary = {
+  id: number;
+  kind: 'note' | 'summary';
+  title: string;
+  created_at: string;
+};
+
+/**
+ * Liste tous les documents d'étude (fiches de révision & résumés) de
+ * l'utilisateur connecté. Le backend renvoie une liste brute (non paginée).
+ */
+export async function listStudyDocs(): Promise<StudyDocSummary[]> {
+  const { data } = await api.get<StudyDocSummary[]>('/llm/study-docs/');
+  return data;
+}

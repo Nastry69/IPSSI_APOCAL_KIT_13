@@ -136,12 +136,33 @@ export async function deleteAccount(password: string): Promise<void> {
   clearToken();
 }
 
+/** Formats disponibles pour l'export RGPD (droit à la portabilité). */
+export type ExportFormat = 'json' | 'csv' | 'html' | 'xlsx';
+
 /**
- * Demande un export RGPD des données personnelles (droit à la portabilité).
- * Le backend envoie par email un lien de téléchargement valable 1 h.
- * Renvoie le message de confirmation (`detail`).
+ * Télécharge directement un export RGPD des données personnelles (droit à la
+ * portabilité) dans le format demandé.
+ *
+ * Le backend renvoie le fichier en pièce jointe (attachment), authentifié par
+ * token via l'instance axios partagée. On récupère le contenu en `blob`, puis
+ * on déclenche le téléchargement côté navigateur (createObjectURL + <a download>),
+ * et on libère l'URL objet ensuite (revokeObjectURL) pour éviter les fuites.
  */
-export async function requestDataExport(): Promise<string> {
-  const { data } = await api.post<{ detail: string }>('/accounts/export/request/');
-  return data.detail;
+export async function downloadDataExport(format: ExportFormat): Promise<void> {
+  const { data } = await api.get<Blob>('/accounts/export/', {
+    params: { format },
+    responseType: 'blob',
+  });
+
+  const url = URL.createObjectURL(data);
+  try {
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `mes-donnees-edututor.${format}`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }

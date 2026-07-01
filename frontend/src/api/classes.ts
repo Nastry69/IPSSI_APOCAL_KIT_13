@@ -6,9 +6,15 @@
  * (KPIs + évolution des scores) et consulter le détail des tentatives.
  *
  * Contrat backend :
- *   GET /api/classes/                                                → Classroom[]
- *   GET /api/classes/<id>/progress/                                  → StudentProgress[]
- *   GET /api/classes/<id>/students/<studentId>/attempts/<attemptId>/ → StudentAttemptDetail
+ *   GET    /api/classes/                                                → Classroom[]
+ *   POST   /api/classes/                          {name}                → Classroom
+ *   GET    /api/classes/<id>/                                           → ClassroomDetail
+ *   PATCH  /api/classes/<id>/                      {name}               → Classroom
+ *   DELETE /api/classes/<id>/                                           → 204
+ *   POST   /api/classes/<id>/students/            {identifier}          → 201 (email | username)
+ *   DELETE /api/classes/<id>/students/<studentId>/                      → 204
+ *   GET    /api/classes/<id>/progress/                                  → StudentProgress[]
+ *   GET    /api/classes/<id>/students/<studentId>/attempts/<attemptId>/ → StudentAttemptDetail
  */
 import { api } from './client';
 
@@ -30,6 +36,22 @@ export type ClassStudent = {
   first_name: string;
   last_name: string;
   username: string;
+};
+
+/**
+ * Un membre (élève) d'une classe, tel que renvoyé par le détail d'une classe
+ * (`GET /classes/<id>/` → clé `students`). Chaque entrée expose déjà un nom
+ * lisible et l'email — pas besoin de recomposer le nom côté front.
+ */
+export type ClassMember = {
+  id: number;
+  name: string;
+  email: string;
+};
+
+/** Détail d'une classe : les champs de la classe + la liste de ses élèves. */
+export type ClassroomDetail = Classroom & {
+  students: ClassMember[];
 };
 
 /** Un point d'évolution : une tentative passée par l'élève. */
@@ -106,4 +128,44 @@ export async function getStudentAttempt(
     `/classes/${classId}/students/${studentId}/attempts/${attemptId}/`,
   );
   return data;
+}
+
+// ---------------------------------------------------------------------------
+// Release 3 — Espace prof : CRUD des classes et gestion des élèves
+// ---------------------------------------------------------------------------
+
+/** Détail d'une classe : ses infos + la liste de ses élèves. */
+export async function getClassDetail(classId: number): Promise<ClassroomDetail> {
+  const { data } = await api.get<ClassroomDetail>(`/classes/${classId}/`);
+  return data;
+}
+
+/** Crée une classe (le code d'invitation est généré côté backend). */
+export async function createClass(name: string): Promise<Classroom> {
+  const { data } = await api.post<Classroom>('/classes/', { name });
+  return data;
+}
+
+/** Renomme une classe. */
+export async function updateClass(classId: number, name: string): Promise<Classroom> {
+  const { data } = await api.patch<Classroom>(`/classes/${classId}/`, { name });
+  return data;
+}
+
+/** Supprime une classe. */
+export async function deleteClass(classId: number): Promise<void> {
+  await api.delete(`/classes/${classId}/`);
+}
+
+/**
+ * Ajoute un élève à une classe via son `identifier` (email OU username).
+ * Le backend résout l'identifiant vers l'utilisateur correspondant.
+ */
+export async function addStudent(classId: number, identifier: string): Promise<void> {
+  await api.post(`/classes/${classId}/students/`, { identifier });
+}
+
+/** Retire un élève d'une classe. */
+export async function removeStudent(classId: number, studentId: number): Promise<void> {
+  await api.delete(`/classes/${classId}/students/${studentId}/`);
 }

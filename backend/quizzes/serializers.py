@@ -24,7 +24,7 @@ class QuestionPublicSerializer(serializers.ModelSerializer):
 
 
 class QuizSerializer(serializers.ModelSerializer):
-    """Renvoie un quiz complet avec ses 10 questions (incluant correct_index)."""
+    """Renvoie un quiz complet avec toutes ses questions (incluant correct_index)."""
 
     questions = QuestionSerializer(many=True, read_only=True)
 
@@ -56,8 +56,13 @@ class AnswerItemSerializer(serializers.Serializer):
 
 class SubmitAnswersSerializer(serializers.Serializer):
     """POST /api/quizzes/<id>/answer/ — le nombre de réponses doit correspondre
-    au nombre de questions du quiz (contrôle final dans la vue, qui connaît le
-    quiz ; ici on vérifie seulement l'absence de doublon d'index).
+    au nombre RÉEL de questions du quiz.
+
+    Le nombre attendu est transmis par la vue (qui connaît le quiz) via
+    ``context["expected_count"]`` : la validation exige alors exactement N
+    réponses couvrant les index 1..N, sans doublon. Si le contexte n'est pas
+    fourni (usage hors vue), on se contente de contrôler l'absence de doublon —
+    la vue garde de toute façon son propre contrôle final défensif.
 
     `question_order` (optionnel) : ordre d'affichage des questions pour le
     retest mélangé. Absent → ordre naturel [1..N] appliqué côté vue.
@@ -76,6 +81,15 @@ class SubmitAnswersSerializer(serializers.Serializer):
         indices = [a["index"] for a in value]
         if len(set(indices)) != len(indices):
             raise serializers.ValidationError("Les indices de réponses ne doivent pas se répéter.")
+
+        # Le nombre attendu vient du quiz (transmis par la vue). On vérifie que
+        # les réponses couvrent EXACTEMENT les questions 1..N, où N est le nombre
+        # réel de questions du quiz — jamais une constante en dur.
+        expected = self.context.get("expected_count")
+        if expected is not None and sorted(indices) != list(range(1, expected + 1)):
+            raise serializers.ValidationError(
+                f"{expected} réponses attendues, couvrant les questions 1..{expected}."
+            )
         return value
 
     def validate_question_order(self, value):
@@ -169,6 +183,33 @@ class JoinClassSerializer(serializers.Serializer):
 
     def validate_code(self, value: str) -> str:
         return value.strip().upper()
+
+
+class ClassroomRenameSerializer(serializers.Serializer):
+    """Renommage d'une classe (PATCH). Le frontend envoie `name` ; on accepte
+    aussi `title` comme alias (les deux pointent vers le champ `name`)."""
+
+    name = serializers.CharField(max_length=120, required=False, allow_blank=False)
+    title = serializers.CharField(max_length=120, required=False, allow_blank=False)
+
+    def validate(self, attrs):
+        new_name = attrs.get("name") or attrs.get("title")
+        if not new_name or not new_name.strip():
+            raise serializers.ValidationError({"name": "Le nom de la classe est requis."})
+        attrs["name"] = new_name.strip()
+        return attrs
+
+
+class AddStudentSerializer(serializers.Serializer):
+    """Ajout d'un élève à une classe par son email OU son username."""
+
+    identifier = serializers.CharField(max_length=254)
+
+    def validate_identifier(self, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise serializers.ValidationError("L'identifiant (email ou username) est requis.")
+        return cleaned
 
 
 # ---------------------------------------------------------------------------

@@ -19,6 +19,9 @@ python-decouple==3.8
 # Parsing PDF (utilisé par l'endpoint LLM en K2)
 pypdf==5.1.0
 
+# Export RGPD au format Excel (téléchargement direct multi-format)
+openpyxl==3.1.5
+
 # Requêtes HTTP vers Ollama
 requests==2.32.3
 

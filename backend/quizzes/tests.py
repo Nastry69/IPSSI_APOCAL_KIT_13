@@ -117,7 +117,8 @@ def test_answer_partial(auth_client, sample_quiz):
     assert response.data["score"] == 5
 
 
-def test_answer_requires_10(auth_client, sample_quiz):
+def test_answer_requires_full_coverage(auth_client, sample_quiz):
+    """Une seule réponse sur un quiz de 10 questions → 400 (couverture incomplète)."""
     response = auth_client.post(
         f"/api/quizzes/{sample_quiz.id}/answer/",
         {"answers": [{"index": 1, "selected_index": 0}]},
@@ -142,6 +143,76 @@ def test_answer_404_for_other_users_quiz(auth_client, other_user):
         format="json",
     )
     assert response.status_code == 404
+
+
+# --- F2 : soumission basée sur le NOMBRE RÉEL de questions (pas 10 en dur) ---
+
+
+@pytest.fixture
+def quiz_15(user) -> Quiz:
+    """Quiz de 15 questions (num_questions variable, > 10) pour vérifier que la
+    soumission n'est pas bloquée à 10 en dur."""
+    quiz = Quiz.objects.create(
+        user=user,
+        title="Quiz 15 questions",
+        source_text="Lorem ipsum.",
+        score=None,
+        num_questions=15,
+    )
+    for i in range(1, 16):
+        Question.objects.create(
+            quiz=quiz,
+            index=i,
+            prompt=f"Question {i} ?",
+            options=["A", "B", "C", "D"],
+            correct_index=0,
+        )
+    return quiz
+
+
+def test_answer_15_questions_all_correct(auth_client, quiz_15):
+    """Un quiz de 15 questions se soumet correctement : score /15, total=15."""
+    response = auth_client.post(
+        f"/api/quizzes/{quiz_15.id}/answer/",
+        {"answers": [{"index": i, "selected_index": 0} for i in range(1, 16)]},
+        format="json",
+    )
+    assert response.status_code == 200, response.data
+    assert response.data["score"] == 15
+    assert response.data["total"] == 15
+    assert len(response.data["details"]) == 15
+    quiz_15.refresh_from_db()
+    assert quiz_15.score == 15
+    # L'Attempt reflète bien le nombre réel de questions.
+    attempt = Attempt.objects.get(quiz=quiz_15, student=quiz_15.user)
+    assert attempt.total == 15
+    assert attempt.score == 15
+    assert Answer.objects.filter(attempt=attempt).count() == 15
+
+
+def test_answer_15_questions_partial_score(auth_client, quiz_15):
+    """Score partiel sur 15 : 10 bonnes + 5 mauvaises → 10/15."""
+    answers = [{"index": i, "selected_index": 0} for i in range(1, 11)] + [
+        {"index": i, "selected_index": 1} for i in range(11, 16)
+    ]
+    response = auth_client.post(
+        f"/api/quizzes/{quiz_15.id}/answer/",
+        {"answers": answers},
+        format="json",
+    )
+    assert response.status_code == 200, response.data
+    assert response.data["score"] == 10
+    assert response.data["total"] == 15
+
+
+def test_answer_10_on_a_15_question_quiz_is_rejected(auth_client, quiz_15):
+    """Soumettre 10 réponses sur un quiz de 15 → 400 (ancien bug : passait)."""
+    response = auth_client.post(
+        f"/api/quizzes/{quiz_15.id}/answer/",
+        {"answers": [{"index": i, "selected_index": 0} for i in range(1, 11)]},
+        format="json",
+    )
+    assert response.status_code == 400
 
 
 # ---------------------------------------------------------------------------

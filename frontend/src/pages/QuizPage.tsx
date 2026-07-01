@@ -61,7 +61,9 @@ export default function QuizPage() {
   };
 
   const handleSubmit = async () => {
-    if (!quiz || Object.keys(answers).length !== 10) return;
+    // Toutes les questions doivent être répondues, quel que soit leur nombre
+    // RÉEL (un quiz peut compter 5 à 20 questions, pas forcément 10).
+    if (!quiz || Object.keys(answers).length !== quiz.questions.length) return;
     setSubmitting(true);
     try {
       const payload = quiz.questions.map((q) => ({
@@ -83,7 +85,14 @@ export default function QuizPage() {
   if (error) return <p className="text-rose-600">{error}</p>;
   if (!quiz) return null;
 
-  const allAnswered = Object.keys(answers).length === 10;
+  const totalQuestions = quiz.questions.length;
+  const allAnswered = Object.keys(answers).length === totalQuestions;
+
+  // Ratio de réussite (0 à 1) calculé sur le total RÉEL renvoyé par l'API :
+  // les seuils d'encouragement et de couleur s'adaptent à un quiz de 5 comme
+  // de 20 questions (avant : seuils fixes 7/4/10 codés pour 10 questions).
+  const scoreRatio = result && result.total > 0 ? result.score / result.total : 0;
+  const isPerfect = result !== null && result.score === result.total;
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
@@ -99,9 +108,9 @@ export default function QuizPage() {
       {result && (
         <div
           className={`card border-l-4 ${
-            result.score >= 7
+            scoreRatio >= 0.7
               ? 'border-emerald-500 bg-emerald-50'
-              : result.score >= 4
+              : scoreRatio >= 0.4
                 ? 'border-amber-500 bg-amber-50'
                 : 'border-rose-500 bg-rose-50'
           }`}
@@ -110,11 +119,11 @@ export default function QuizPage() {
             Score : {result.score} / {result.total}
           </h2>
           <p className="text-slate-700">
-            {result.score === 10
+            {isPerfect
               ? '🎉 Sans-faute ! Tu maitrises ce chapitre.'
-              : result.score >= 7
+              : scoreRatio >= 0.7
                 ? '👍 Bon résultat. Revois les questions ratées en bas de page.'
-                : result.score >= 4
+                : scoreRatio >= 0.4
                   ? "📚 Tu as les bases, mais des révisions s'imposent."
                   : '⚠️ Il faut reprendre le cours en profondeur.'}
           </p>
@@ -200,7 +209,7 @@ export default function QuizPage() {
             ? 'Correction en cours…'
             : allAnswered
               ? '🎯 Soumettre mes réponses'
-              : `Répondre à toutes les questions (${Object.keys(answers).length}/10)`}
+              : `Répondre à toutes les questions (${Object.keys(answers).length}/${totalQuestions})`}
         </button>
       )}
     </div>
