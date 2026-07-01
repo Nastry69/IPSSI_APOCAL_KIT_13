@@ -304,3 +304,200 @@ def test_teacher_cannot_see_attempt_belonging_to_another_student(teacher, studen
     # On demande la tentative d'other_student en la faisant passer pour student.
     resp = _client(teacher).get(_attempt_url(classroom.pk, student.pk, attempt_other.pk))
     assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# F4 — CRUD classes & élèves (espace prof)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def other_teacher():
+    return User.objects.create_user(
+        username="autre-prof@test.com",
+        email="autre-prof@test.com",
+        password="motdepasse123",
+        role="teacher",
+    )
+
+
+# --- PATCH /api/classes/<id>/ : renommer ---
+
+
+def test_teacher_renames_own_class(teacher):
+    classroom = Classroom.objects.create(teacher=teacher, name="Ancien nom", code="REN001")
+    resp = _client(teacher).patch(
+        f"/api/classes/{classroom.pk}/", {"name": "Nouveau nom"}, format="json"
+    )
+    assert resp.status_code == 200
+    assert resp.data["name"] == "Nouveau nom"
+    classroom.refresh_from_db()
+    assert classroom.name == "Nouveau nom"
+
+
+def test_teacher_renames_class_with_title_alias(teacher):
+    """Le contrat accepte `name` ; on tolère aussi `title` comme alias."""
+    classroom = Classroom.objects.create(teacher=teacher, name="Ancien", code="REN002")
+    resp = _client(teacher).patch(
+        f"/api/classes/{classroom.pk}/", {"title": "Via title"}, format="json"
+    )
+    assert resp.status_code == 200
+    classroom.refresh_from_db()
+    assert classroom.name == "Via title"
+
+
+def test_rename_empty_name_is_rejected(teacher):
+    classroom = Classroom.objects.create(teacher=teacher, name="Garde", code="REN003")
+    resp = _client(teacher).patch(f"/api/classes/{classroom.pk}/", {"name": "  "}, format="json")
+    assert resp.status_code == 400
+    classroom.refresh_from_db()
+    assert classroom.name == "Garde"
+
+
+def test_teacher_cannot_rename_other_teachers_class(teacher, other_teacher):
+    """Renommer la classe d'un autre prof → 404 (scoping sécurité)."""
+    foreign = Classroom.objects.create(teacher=other_teacher, name="Pas la mienne", code="REN004")
+    resp = _client(teacher).patch(
+        f"/api/classes/{foreign.pk}/", {"name": "Piratage"}, format="json"
+    )
+    assert resp.status_code == 404
+    foreign.refresh_from_db()
+    assert foreign.name == "Pas la mienne"
+
+
+def test_student_cannot_rename_class(teacher, student):
+    """Un non-teacher est refusé (403) par la permission IsTeacher."""
+    classroom = Classroom.objects.create(teacher=teacher, name="Classe", code="REN005")
+    classroom.students.add(student)
+    resp = _client(student).patch(f"/api/classes/{classroom.pk}/", {"name": "X"}, format="json")
+    assert resp.status_code == 403
+
+
+# --- DELETE /api/classes/<id>/ : supprimer ---
+
+
+def test_teacher_deletes_own_class(teacher):
+    classroom = Classroom.objects.create(teacher=teacher, name="À supprimer", code="DEL001")
+    resp = _client(teacher).delete(f"/api/classes/{classroom.pk}/")
+    assert resp.status_code == 204
+    assert not Classroom.objects.filter(pk=classroom.pk).exists()
+
+
+def test_teacher_cannot_delete_other_teachers_class(teacher, other_teacher):
+    foreign = Classroom.objects.create(teacher=other_teacher, name="Autre", code="DEL002")
+    resp = _client(teacher).delete(f"/api/classes/{foreign.pk}/")
+    assert resp.status_code == 404
+    assert Classroom.objects.filter(pk=foreign.pk).exists()
+
+
+def test_student_cannot_delete_class(teacher, student):
+    classroom = Classroom.objects.create(teacher=teacher, name="Classe", code="DEL003")
+    resp = _client(student).delete(f"/api/classes/{classroom.pk}/")
+    assert resp.status_code == 403
+    assert Classroom.objects.filter(pk=classroom.pk).exists()
+
+
+# --- POST /api/classes/<id>/students/ : ajouter un élève ---
+
+
+def test_teacher_adds_student_by_email(teacher, student):
+    classroom = Classroom.objects.create(teacher=teacher, name="Classe", code="ADD001")
+    resp = _client(teacher).post(
+        f"/api/classes/{classroom.pk}/students/",
+        {"identifier": "eleve@test.com"},
+        format="json",
+    )
+    assert resp.status_code == 200
+    assert classroom.students.filter(pk=student.pk).exists()
+    # La réponse renvoie le roster à jour.
+    assert any(s["id"] == student.pk for s in resp.data["students"])
+
+
+def test_teacher_adds_student_by_username(teacher, student):
+    classroom = Classroom.objects.create(teacher=teacher, name="Classe", code="ADD002")
+    resp = _client(teacher).post(
+        f"/api/classes/{classroom.pk}/students/",
+        {"identifier": student.username},
+        format="json",
+    )
+    assert resp.status_code == 200
+    assert classroom.students.filter(pk=student.pk).exists()
+
+
+def test_add_nonexistent_email_returns_404(teacher):
+    classroom = Classroom.objects.create(teacher=teacher, name="Classe", code="ADD003")
+    resp = _client(teacher).post(
+        f"/api/classes/{classroom.pk}/students/",
+        {"identifier": "personne@nulle-part.com"},
+        format="json",
+    )
+    assert resp.status_code == 404
+    assert classroom.students.count() == 0
+
+
+def test_add_a_teacher_as_student_returns_404(teacher, other_teacher):
+    """L'identifiant existe mais l'utilisateur n'est pas un élève → 404."""
+    classroom = Classroom.objects.create(teacher=teacher, name="Classe", code="ADD004")
+    resp = _client(teacher).post(
+        f"/api/classes/{classroom.pk}/students/",
+        {"identifier": other_teacher.email},
+        format="json",
+    )
+    assert resp.status_code == 404
+    assert classroom.students.count() == 0
+
+
+def test_teacher_cannot_add_student_to_other_teachers_class(teacher, other_teacher, student):
+    foreign = Classroom.objects.create(teacher=other_teacher, name="Autre", code="ADD005")
+    resp = _client(teacher).post(
+        f"/api/classes/{foreign.pk}/students/",
+        {"identifier": "eleve@test.com"},
+        format="json",
+    )
+    assert resp.status_code == 404
+    assert foreign.students.count() == 0
+
+
+def test_student_cannot_add_student(teacher, student):
+    classroom = Classroom.objects.create(teacher=teacher, name="Classe", code="ADD006")
+    classroom.students.add(student)
+    resp = _client(student).post(
+        f"/api/classes/{classroom.pk}/students/",
+        {"identifier": "eleve@test.com"},
+        format="json",
+    )
+    assert resp.status_code == 403
+
+
+# --- DELETE /api/classes/<id>/students/<student_id>/ : retirer un élève ---
+
+
+def test_teacher_removes_student(teacher, student):
+    classroom = Classroom.objects.create(teacher=teacher, name="Classe", code="RM001")
+    classroom.students.add(student)
+    resp = _client(teacher).delete(f"/api/classes/{classroom.pk}/students/{student.pk}/")
+    assert resp.status_code == 204
+    assert not classroom.students.filter(pk=student.pk).exists()
+
+
+def test_remove_student_not_in_class_returns_404(teacher, student):
+    """Retirer un élève qui n'est pas membre → 404."""
+    classroom = Classroom.objects.create(teacher=teacher, name="Classe", code="RM002")
+    resp = _client(teacher).delete(f"/api/classes/{classroom.pk}/students/{student.pk}/")
+    assert resp.status_code == 404
+
+
+def test_teacher_cannot_remove_student_from_other_teachers_class(teacher, other_teacher, student):
+    foreign = Classroom.objects.create(teacher=other_teacher, name="Autre", code="RM003")
+    foreign.students.add(student)
+    resp = _client(teacher).delete(f"/api/classes/{foreign.pk}/students/{student.pk}/")
+    assert resp.status_code == 404
+    assert foreign.students.filter(pk=student.pk).exists()
+
+
+def test_student_cannot_remove_student(teacher, student):
+    classroom = Classroom.objects.create(teacher=teacher, name="Classe", code="RM004")
+    classroom.students.add(student)
+    resp = _client(student).delete(f"/api/classes/{classroom.pk}/students/{student.pk}/")
+    assert resp.status_code == 403
+    assert classroom.students.filter(pk=student.pk).exists()

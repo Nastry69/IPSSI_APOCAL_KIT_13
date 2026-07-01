@@ -116,7 +116,10 @@ export default function DashboardPage() {
             </p>
           </div>
 
-          <div className="flex gap-3">
+          <div className="flex flex-wrap gap-3">
+            <Link to="/review-hub" className="btn-secondary">
+              🔖 Réviser (QCM, fiches, résumés)
+            </Link>
             <Link to="/review" className="btn-secondary">
               📕 Réviser mes erreurs
             </Link>

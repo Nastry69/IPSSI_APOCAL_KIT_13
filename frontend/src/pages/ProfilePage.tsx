@@ -11,14 +11,16 @@
  * protège par une confirmation au mot de passe.
  *
  * L'export RGPD (droit à la portabilité) est disponible dans la zone « Mes
- *   données » (bouton actif) et rappelé dans la Zone de danger avant suppression.
+ *   données » via une MODALE proposant 4 formats en téléchargement direct
+ *   (CSV / JSON / HTML / XLSX), et rappelé dans la Zone de danger avant suppression.
  * [TODO J4] Ajouter un bouton « Signaler un contenu / un quiz » — placeholder.
  */
 import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { changePassword, deleteAccount, requestDataExport, updateProfile } from '@/api/auth';
+import { changePassword, deleteAccount, updateProfile } from '@/api/auth';
 import { getApiErrorMessage } from '@/api/errors';
+import ExportModal from '@/components/ExportModal';
 
 export default function ProfilePage() {
   const { user, refresh } = useAuth();
@@ -46,24 +48,8 @@ export default function ProfilePage() {
   const [delErr, setDelErr] = useState<string | null>(null);
   const [delLoading, setDelLoading] = useState(false);
 
-  // --- Export RGPD (portabilité) ---
-  const [exportMsg, setExportMsg] = useState<string | null>(null);
-  const [exportErr, setExportErr] = useState<string | null>(null);
-  const [exportLoading, setExportLoading] = useState(false);
-
-  const handleExport = async () => {
-    setExportMsg(null);
-    setExportErr(null);
-    setExportLoading(true);
-    try {
-      await requestDataExport();
-      setExportMsg('Un lien d’export vient de vous être envoyé par email.');
-    } catch (err) {
-      setExportErr(getApiErrorMessage(err, 'Demande d’export impossible.'));
-    } finally {
-      setExportLoading(false);
-    }
-  };
+  // --- Export RGPD (portabilité) : modale multi-format ---
+  const [exportOpen, setExportOpen] = useState(false);
 
   const handleInfo = async (e: FormEvent) => {
     e.preventDefault();
@@ -243,27 +229,12 @@ export default function ProfilePage() {
       <section className="card bg-slate-50">
         <h2 className="text-lg font-semibold text-slate-900 mb-2">Mes données</h2>
         <p className="text-sm text-slate-500 mb-4">
-          Vous pouvez récupérer une copie de toutes vos données (compte, profil, quiz). Un lien de
-          téléchargement sécurisé, valable 1 heure, vous sera envoyé par email.
+          Vous pouvez récupérer une copie de toutes vos données (compte, profil, quiz) en
+          téléchargement direct, au format de votre choix (CSV, JSON, HTML ou Excel).
         </p>
-        {exportMsg && (
-          <div className="mb-4 p-3 bg-emerald-50 border-l-4 border-emerald-500 text-sm text-emerald-900 rounded">
-            {exportMsg}
-          </div>
-        )}
-        {exportErr && (
-          <div className="mb-4 p-3 bg-rose-50 border-l-4 border-rose-500 text-sm text-rose-900 rounded">
-            {exportErr}
-          </div>
-        )}
         <div className="flex flex-wrap gap-3">
-          <button
-            type="button"
-            onClick={handleExport}
-            disabled={exportLoading}
-            className="btn-secondary"
-          >
-            {exportLoading ? 'Envoi du lien…' : 'Exporter mes données'}
+          <button type="button" onClick={() => setExportOpen(true)} className="btn-secondary">
+            Exporter mes données
           </button>
           <button
             type="button"
@@ -286,13 +257,8 @@ export default function ProfilePage() {
         <p className="text-sm text-slate-600 mb-4">
           Avant de supprimer, vous pouvez récupérer une copie de vos données.
         </p>
-        <button
-          type="button"
-          onClick={handleExport}
-          disabled={exportLoading}
-          className="btn-secondary mb-4"
-        >
-          {exportLoading ? 'Envoi du lien…' : 'Exporter mes données d’abord'}
+        <button type="button" onClick={() => setExportOpen(true)} className="btn-secondary mb-4">
+          Exporter mes données d’abord
         </button>
         {delErr && (
           <div className="mb-4 p-3 bg-rose-50 border-l-4 border-rose-500 text-sm text-rose-900 rounded">
@@ -330,6 +296,8 @@ export default function ProfilePage() {
           </button>
         </form>
       </section>
+
+      <ExportModal open={exportOpen} onClose={() => setExportOpen(false)} />
     </div>
   );
 }

@@ -9,30 +9,29 @@ Endpoints d'authentification (Lot 3 : email-identifiant + validation + reset).
     POST /api/accounts/resend-verification/      — renvoyer l'email de validation
     POST /api/accounts/password-reset/           — demander un reset (envoie un email)
     POST /api/accounts/password-reset/confirm/   — définir le nouveau mot de passe
+    GET  /api/accounts/export/?format=…          — export RGPD en téléchargement direct
 """
 
-import json
 import logging
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth import login as django_login
 from django.contrib.auth import logout as django_logout
 from django.http import HttpResponse
-from django.urls import reverse
-from drf_spectacular.utils import OpenApiResponse, extend_schema
+from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
 from rest_framework import status
 from rest_framework.authtoken.models import Token
+from rest_framework.negotiation import BaseContentNegotiation
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .emails import (
     EmailError,
-    send_export_email,
     send_password_reset_email,
     send_verification_email,
 )
-from .export import build_user_export
+from .export import EXPORT_FORMATS, render_export
 from .models import get_or_create_profile
 from .serializers import (
     ChangePasswordSerializer,
@@ -46,9 +45,7 @@ from .serializers import (
     UserSerializer,
 )
 from .tokens import (
-    make_export_token,
     read_email_verify_token,
-    read_export_token,
     read_password_reset_tokens,
 )
 
@@ -288,7 +285,7 @@ class ProfileView(APIView):
     )
     def delete(self, request):
         # Suppression DURE (hard delete) confirmée par mot de passe. L'export RGPD
-        # (droit à la portabilité) est disponible via /api/accounts/export/request/
+        # (droit à la portabilité) est disponible via GET /api/accounts/export/
         # et rappelé côté front dans la Zone de danger avant suppression.
         serializer = DeleteAccountSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
@@ -326,62 +323,69 @@ class ChangePasswordView(APIView):
 
 
 # ---------------------------------------------------------------------------
-# Export RGPD (droit à la portabilité, art. 20) — asynchrone par lien email
+# Export RGPD (droit à la portabilité, art. 20) — téléchargement direct authentifié
 # ---------------------------------------------------------------------------
 
 
-class RequestExportView(APIView):
-    """Demande d'export RGPD : envoie par email un lien de téléchargement temporaire."""
+class _ExportContentNegotiation(BaseContentNegotiation):
+    """Neutralise la négociation de rendu DRF pour ExportView.
+
+    DRF réserve le paramètre d'URL ``?format=`` (URL_FORMAT_OVERRIDE) pour choisir
+    un renderer : avec ``?format=csv`` il ne trouve aucun renderer et renvoie 404
+    AVANT la vue. Or ExportView utilise ``?format=`` comme SON propre paramètre et
+    renvoie un ``HttpResponse`` brut. On ignore donc la négociation (le 1er
+    renderer est renvoyé mais jamais utilisé pour rendre la réponse).
+    """
+
+    def select_parser(self, request, parsers):
+        return parsers[0] if parsers else None
+
+    def select_renderer(self, request, renderers, format_suffix=None):
+        return (renderers[0], renderers[0].media_type)
+
+
+class ExportView(APIView):
+    """Téléchargement direct des données personnelles de l'utilisateur connecté.
+
+    GET /api/accounts/export/?format=<json|csv|html|xlsx>
+
+    Authentifié par token DRF (IsAuthenticated). Renvoie le fichier en pièce
+    jointe (Content-Disposition: attachment). Format par défaut = json ;
+    format inconnu -> 400. On ne renvoie QUE les données de request.user.
+    """
 
     permission_classes = [IsAuthenticated]
-    # Anti-abus : limite le nombre de demandes d'export (ScopedRateThrottle).
+    # Anti-abus : limite le nombre d'exports (ScopedRateThrottle, scope "export").
     throttle_scope = "export"
+    # ?format= est NOTRE paramètre (json/csv/html/xlsx), pas la négociation DRF.
+    content_negotiation_class = _ExportContentNegotiation
 
-    @extend_schema(responses={200: OpenApiResponse(description="Lien d'export envoyé par email")})
-    def post(self, request):
-        user = request.user
-        token = make_export_token(user)
-        download_url = request.build_absolute_uri(reverse("export-download")) + "?token=" + token
-        # Best-effort : on ne bloque pas si l'email ne part pas (mode console en dev,
-        # clé Brevo expirée en prod). Réponse GÉNÉRIQUE dans tous les cas.
-        try:
-            send_export_email(user, download_url)
-        except EmailError as exc:
-            logger.warning("Email d'export non envoyé pour %s : %s", user.email, exc)
-        return Response(
-            {
-                "detail": "Un lien de téléchargement de vos données vient de vous "
-                "être envoyé par email. Il est valable 1 heure."
-            }
-        )
-
-
-class DownloadExportView(APIView):
-    """Téléchargement de l'export : authentifié PAR LE TOKEN signé (pas par session)."""
-
-    permission_classes = [AllowAny]
-    authentication_classes = []  # endpoint public : l'autorisation vient du token signé
-
-    @extend_schema(responses={200: OpenApiResponse(description="Fichier JSON en pièce jointe")})
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                name="format",
+                description="Format de l'export : json (défaut), csv, html ou xlsx.",
+                required=False,
+                enum=sorted(EXPORT_FORMATS.keys()),
+            )
+        ],
+        responses={200: OpenApiResponse(description="Fichier des données en pièce jointe")},
+    )
     def get(self, request):
-        token = request.query_params.get("token", "")
-        uid = read_export_token(token)
-        if uid is None:
+        fmt = request.query_params.get("format", "json").lower()
+        if fmt not in EXPORT_FORMATS:
             return Response(
-                {"detail": "Lien d'export invalide ou expiré."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        try:
-            user = User.objects.get(pk=uid)
-        except User.DoesNotExist:
-            return Response(
-                {"detail": "Lien d'export invalide ou expiré."},
+                {
+                    "detail": (
+                        f"Format d'export invalide : {fmt!r}. "
+                        f"Formats acceptés : {', '.join(sorted(EXPORT_FORMATS))}."
+                    )
+                },
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # On ne renvoie QUE les données de l'utilisateur encodé dans le token.
-        data = build_user_export(user)
-        payload = json.dumps(data, ensure_ascii=False, indent=2)
-        response = HttpResponse(payload, content_type="application/json; charset=utf-8")
-        response["Content-Disposition"] = 'attachment; filename="mes-donnees-edututor.json"'
+        # On ne construit et ne renvoie QUE les données de l'utilisateur connecté.
+        content, content_type, extension = render_export(request.user, fmt)
+        response = HttpResponse(content, content_type=content_type)
+        response["Content-Disposition"] = f'attachment; filename="mes-donnees-edututor.{extension}"'
         return response
