@@ -342,7 +342,9 @@ if SECURE_PROD:
     CSRF_COOKIE_SECURE = True
     CSRF_COOKIE_HTTPONLY = True  # le token CSRF n'est pas lu en JS (auth par token)
     SESSION_COOKIE_HTTPONLY = True
-    SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"  # OWASP (défaut Django : same-origin)
+    SECURE_REFERRER_POLICY = (
+        "strict-origin-when-cross-origin"  # OWASP (défaut Django : same-origin)
+    )
     SECURE_HSTS_SECONDS = 31536000  # 1 an
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True

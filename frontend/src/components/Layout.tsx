@@ -56,6 +56,11 @@ export default function Layout() {
                 <Link to="/history" className="text-slate-700 hover:text-indigo-600">
                   Historique
                 </Link>
+                {user.role === 'teacher' && (
+                  <Link to="/teacher" className="text-indigo-600 font-medium hover:text-indigo-700">
+                    Espace prof
+                  </Link>
+                )}
                 {user.is_staff && (
                   <Link to="/admin" className="text-amber-600 font-medium hover:text-amber-700">
                     Admin

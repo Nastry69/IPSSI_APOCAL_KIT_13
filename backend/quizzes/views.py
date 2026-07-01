@@ -22,11 +22,13 @@ from .models import Answer, Attempt, Classroom, Question, Quiz
 from .serializers import (
     AttemptDetailSerializer,
     AttemptListSerializer,
+    ClassProgressStudentSerializer,
     ClassroomCreateSerializer,
     ClassroomSerializer,
     JoinClassSerializer,
     QuizSerializer,
     QuizSummarySerializer,
+    StudentIdentitySerializer,
     SubmitAnswersSerializer,
 )
 
@@ -380,3 +382,123 @@ class ClassroomDetailView(APIView):
             for s in classroom.students.all()
         ]
         return Response(data)
+
+
+# ---------------------------------------------------------------------------
+# Release 2 — Espace prof : suivi de la progression des élèves d'une classe
+# ---------------------------------------------------------------------------
+
+
+def _get_owned_classroom_or_404(user, class_id: int) -> Classroom:
+    """Récupère la classe `class_id` UNIQUEMENT si `user` en est le teacher.
+
+    SÉCURITÉ : le filtre `teacher=user` garantit qu'un enseignant ne peut jamais
+    ouvrir la progression d'une classe qu'il ne possède pas — on renvoie 404
+    (et non 403) pour ne pas divulguer l'existence de la classe.
+    """
+    return get_object_or_404(Classroom, pk=class_id, teacher=user)
+
+
+class ClassProgressView(APIView):
+    """GET /api/classes/<class_id>/progress/ — progression des élèves de la classe.
+
+    Réservé à l'enseignant PROPRIÉTAIRE de la classe (404 sinon). Pour chaque
+    élève de la classe, on agrège ses `Attempt` (tous quizzes confondus) en KPIs
+    (nombre de quiz passés, moyenne, meilleur / dernier score) et en une liste
+    `evolution` triée chronologiquement — même logique d'agrégation que
+    `StatsView`, mais côté enseignant et par élève.
+    """
+
+    permission_classes = [IsAuthenticated, IsTeacher]
+
+    @extend_schema(
+        responses={200: ClassProgressStudentSerializer(many=True)},
+        description=(
+            "Progression de chaque élève de la classe (KPIs + évolution "
+            "chronologique). Enseignant propriétaire uniquement (404 sinon)."
+        ),
+    )
+    def get(self, request, class_id: int):
+        classroom = _get_owned_classroom_or_404(request.user, class_id)
+
+        # On récupère toutes les tentatives des élèves de la classe en une seule
+        # requête (select_related pour éviter le N+1 sur quiz.title), puis on
+        # regroupe en Python par élève — tri chronologique global.
+        students = list(classroom.students.all())
+        attempts_by_student: dict[int, list[Attempt]] = {s.id: [] for s in students}
+        attempts = (
+            Attempt.objects.filter(student__in=students)
+            .select_related("quiz")
+            .order_by("created_at", "id")
+        )
+        for attempt in attempts:
+            # Un élève a pu quitter la classe entre-temps : on ne garde que les
+            # tentatives des élèves actuellement membres.
+            if attempt.student_id in attempts_by_student:
+                attempts_by_student[attempt.student_id].append(attempt)
+
+        payload = []
+        for student in students:
+            student_attempts = attempts_by_student[student.id]
+            evolution = [
+                {
+                    "attempt_id": a.id,
+                    "quiz_id": a.quiz_id,
+                    "quiz_title": a.quiz.title,
+                    "number": a.number,
+                    "score": a.score,
+                    "total": a.total,
+                    "created_at": a.created_at,
+                }
+                for a in student_attempts
+            ]
+            # `quizzes_taken` = tentatives avec un score renseigné (comme StatsView).
+            scored = [a.score for a in student_attempts if a.score is not None]
+            payload.append(
+                {
+                    "student": StudentIdentitySerializer(student).data,
+                    "quizzes_taken": len(scored),
+                    "average_score": round(sum(scored) / len(scored), 1) if scored else None,
+                    "best_score": max(scored) if scored else None,
+                    "last_score": scored[-1] if scored else None,
+                    "evolution": evolution,
+                }
+            )
+
+        return Response(payload)
+
+
+class StudentAttemptDetailView(APIView):
+    """GET /api/classes/<class_id>/students/<student_id>/attempts/<attempt_id>/
+
+    Détail d'une tentative (avec ses réponses) d'un élève, pour l'enseignant.
+
+    SÉCURITÉ (triple contrôle, sinon 404) :
+      1. la classe `class_id` appartient à l'enseignant connecté ;
+      2. l'élève `student_id` est membre de cette classe ;
+      3. la tentative `attempt_id` appartient bien à cet élève.
+    """
+
+    permission_classes = [IsAuthenticated, IsTeacher]
+
+    @extend_schema(
+        responses={200: AttemptDetailSerializer},
+        description=(
+            "Détail (réponses) d'une tentative d'un élève de la classe. "
+            "Autorisé seulement si la classe appartient à l'enseignant, que "
+            "l'élève est membre de la classe et que la tentative est la sienne "
+            "(404 sinon)."
+        ),
+    )
+    def get(self, request, class_id: int, student_id: int, attempt_id: int):
+        # 1. La classe doit appartenir à l'enseignant connecté.
+        classroom = _get_owned_classroom_or_404(request.user, class_id)
+        # 2. L'élève doit être membre de CETTE classe.
+        if not classroom.students.filter(pk=student_id).exists():
+            return Response(
+                {"detail": "Élève introuvable dans cette classe."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        # 3. La tentative doit appartenir à cet élève.
+        attempt = get_object_or_404(Attempt, pk=attempt_id, student_id=student_id)
+        return Response(AttemptDetailSerializer(attempt).data)
