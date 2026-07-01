@@ -34,6 +34,29 @@ class LLMClient(ABC):
         """
         raise NotImplementedError
 
+    def generate_text(self, source_text: str, title: str, kind: str) -> str:
+        """Génère un document de révision en TEXTE libre (markdown) — Release 2.
+
+        Contrairement à `generate_quiz` (sortie JSON stricte), renvoie du texte
+        libre selon le format demandé :
+            - kind="note"    → fiche de révision concise (markdown)
+            - kind="summary" → résumé structuré (markdown)
+
+        Implémentation PAR DÉFAUT : lève une LLMError « non supporté ». Les
+        clients qui savent produire du texte libre (mock, Ollama, base
+        openai-compatible…) redéfinissent cette méthode. Les autres héritent de
+        ce comportement et échouent clairement.
+
+        Raises:
+            LLMError: si le backend ne supporte pas la génération de texte, ou
+                      si le LLM est indisponible.
+        """
+        raise LLMError(
+            f"Le backend « {type(self).__name__} » ne supporte pas encore la "
+            "génération de documents de révision (fiche / résumé). Utilisez "
+            "LLM_BACKEND=ollama, mock, ou un fournisseur au format OpenAI."
+        )
+
 
 class LLMError(Exception):
     """Erreur générique côté LLM (indisponibilité, parsing, validation)."""

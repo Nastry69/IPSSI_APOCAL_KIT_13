@@ -7,7 +7,7 @@ Activé via : LLM_BACKEND=mock dans le .env
 
 import random
 
-from .base import LLMClient
+from .base import LLMClient, LLMError
 
 
 class MockLLMClient(LLMClient):
@@ -47,3 +47,19 @@ class MockLLMClient(LLMClient):
                 }
             )
         return questions
+
+    def generate_text(self, source_text: str, title: str, kind: str) -> str:
+        # Contenu factice DÉTERMINISTE (même entrée → même sortie) pour les tests.
+        if kind not in ("note", "summary"):
+            raise LLMError(f"kind inconnu pour le mock : {kind!r} (attendu 'note' | 'summary').")
+        words = [w for w in source_text.split() if len(w) > 3][:8]
+        if not words:
+            words = ["concept", "notion", "principe"]
+        label = "Fiche de révision" if kind == "note" else "Résumé"
+        bullets = "\n".join(f"- Point clé mock sur « {w} »." for w in words)
+        return (
+            f"# [MOCK {label}] {title}\n\n"
+            f"## Points clés\n{bullets}\n\n"
+            f"## Définitions\n"
+            f"- **{words[0]}** : définition mock déterministe pour les tests.\n"
+        )

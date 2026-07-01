@@ -1,6 +1,8 @@
-"""Sérialiseurs pour les endpoints LLM (génération de quiz)."""
+"""Sérialiseurs pour les endpoints LLM (génération de quiz + documents de révision)."""
 
 from rest_framework import serializers
+
+from quizzes.models import StudyDoc
 
 
 class GenerateQuizSerializer(serializers.Serializer):
@@ -39,3 +41,22 @@ class GenerateQuizSerializer(serializers.Serializer):
             raise serializers.ValidationError({"pdf": "Seuls les fichiers .pdf sont acceptés."})
 
         return attrs
+
+
+class GenerateStudyDocSerializer(GenerateQuizSerializer):
+    """Input pour POST /api/llm/generate-note/ et /generate-summary/.
+
+    Mêmes entrées que la génération de quiz : `title` + (`pdf` OU `source_text`
+    ≥ 200 caractères). On réutilise directement la validation pdf/texte de
+    `GenerateQuizSerializer` (DRY). Les champs propres au quiz (difficulty,
+    num_questions, theme) sont ignorés ici mais restent tolérés.
+    """
+
+
+class StudyDocSerializer(serializers.ModelSerializer):
+    """Sortie d'un document de révision (fiche / résumé)."""
+
+    class Meta:
+        model = StudyDoc
+        fields = ["id", "kind", "title", "content", "created_at"]
+        read_only_fields = fields

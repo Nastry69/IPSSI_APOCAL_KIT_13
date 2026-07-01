@@ -1,6 +1,6 @@
 import { useState, type ChangeEvent, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { generateQuiz, type QuizDifficulty } from '@/api/llm';
+import { generateQuiz, generateNote, generateSummary, type QuizDifficulty } from '@/api/llm';
 import { getApiErrorMessage } from '@/api/errors';
 
 // Garde-fou taille PDF côté client : aligné sur le backend (pdf_utils rejette > 5 Mo).
@@ -10,9 +10,20 @@ const MAX_PDF_SIZE = 5 * 1024 * 1024; // 5 Mo
 // Options du sélecteur de nombre de questions (bornes backend : 5 à 20).
 const NUM_QUESTIONS_OPTIONS = [5, 10, 15, 20] as const;
 
+/** Formats de génération proposés (Release 2 — Feature #1). */
+type GenFormat = 'quiz' | 'note' | 'summary';
+
+// Libellés du sélecteur de format et du bouton de soumission, par format.
+const FORMAT_OPTIONS: { value: GenFormat; tab: string; button: string }[] = [
+  { value: 'quiz', tab: '❓ Quiz', button: 'Générer le quiz' },
+  { value: 'note', tab: '🗂️ Fiche de révision', button: 'Générer la fiche' },
+  { value: 'summary', tab: '📄 Résumé', button: 'Générer le résumé' },
+];
+
 export default function UploadPage() {
   const navigate = useNavigate();
   const [title, setTitle] = useState('');
+  const [format, setFormat] = useState<GenFormat>('quiz');
   const [mode, setMode] = useState<'pdf' | 'text'>('text');
   const [pdf, setPdf] = useState<File | null>(null);
   const [sourceText, setSourceText] = useState('');
@@ -26,16 +37,30 @@ export default function UploadPage() {
     e.preventDefault();
     setError(null);
     setLoading(true);
+    // Source commune aux trois formats : PDF ou texte selon le mode.
+    const pdfInput = mode === 'pdf' ? (pdf ?? undefined) : undefined;
+    const sourceInput = mode === 'text' ? sourceText : undefined;
     try {
-      const quiz = await generateQuiz({
-        title,
-        pdf: mode === 'pdf' ? (pdf ?? undefined) : undefined,
-        source_text: mode === 'text' ? sourceText : undefined,
-        difficulty,
-        num_questions: numQuestions,
-        theme: theme.trim() ? theme.trim() : undefined,
-      });
-      navigate(`/quiz/${quiz.id}`);
+      if (format === 'quiz') {
+        const quiz = await generateQuiz({
+          title,
+          pdf: pdfInput,
+          source_text: sourceInput,
+          difficulty,
+          num_questions: numQuestions,
+          theme: theme.trim() ? theme.trim() : undefined,
+        });
+        navigate(`/quiz/${quiz.id}`);
+      } else {
+        // Fiche de révision ou résumé : génère un StudyDoc puis affiche la page dédiée.
+        const generate = format === 'note' ? generateNote : generateSummary;
+        const doc = await generate({
+          title,
+          pdf: pdfInput,
+          source_text: sourceInput,
+        });
+        navigate(`/study/${doc.id}`);
+      }
     } catch (err) {
       setError(getApiErrorMessage(err, 'Échec de la génération.'));
     } finally {
@@ -62,9 +87,10 @@ export default function UploadPage() {
 
   return (
     <div className="max-w-2xl mx-auto">
-      <h1 className="text-3xl font-bold text-slate-900 mb-2">Créer un nouveau quiz</h1>
+      <h1 className="text-3xl font-bold text-slate-900 mb-2">Créer un support de révision</h1>
       <p className="text-slate-600 mb-6">
-        Uploade un PDF ou colle un texte. EduTutor IA génère un quiz QCM personnalisé.
+        Uploade un PDF ou colle un texte. EduTutor IA génère un quiz QCM, une fiche de révision ou
+        un résumé personnalisé.
       </p>
 
       {error && (
@@ -74,6 +100,30 @@ export default function UploadPage() {
       )}
 
       <form onSubmit={handleSubmit} className="card space-y-4">
+        {/* Sélecteur de format de génération (Quiz / Fiche de révision / Résumé). */}
+        <div>
+          <span className="block text-sm font-medium text-slate-700 mb-1">
+            Format de génération
+          </span>
+          <div className="flex flex-wrap gap-2">
+            {FORMAT_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                aria-pressed={format === opt.value}
+                onClick={() => setFormat(opt.value)}
+                className={`px-3 py-1 rounded text-sm font-medium ${
+                  format === opt.value
+                    ? 'bg-indigo-600 text-white'
+                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                }`}
+              >
+                {opt.tab}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <div>
           <label htmlFor="quiz-title" className="block text-sm font-medium text-slate-700 mb-1">
             Titre du cours
@@ -141,62 +191,67 @@ export default function UploadPage() {
           )}
         </div>
 
-        {/* Options de génération (difficulté, nombre de questions, thème ciblé) */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label
-              htmlFor="quiz-difficulty"
-              className="block text-sm font-medium text-slate-700 mb-1"
-            >
-              Difficulté
-            </label>
-            <select
-              id="quiz-difficulty"
-              value={difficulty}
-              onChange={(e) => setDifficulty(e.target.value as QuizDifficulty)}
-              className="input"
-            >
-              <option value="easy">Facile</option>
-              <option value="medium">Moyen</option>
-              <option value="hard">Difficile</option>
-            </select>
-          </div>
+        {/* Options propres au quiz (difficulté, nombre de questions, thème ciblé). */}
+        {format === 'quiz' && (
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label
+                  htmlFor="quiz-difficulty"
+                  className="block text-sm font-medium text-slate-700 mb-1"
+                >
+                  Difficulté
+                </label>
+                <select
+                  id="quiz-difficulty"
+                  value={difficulty}
+                  onChange={(e) => setDifficulty(e.target.value as QuizDifficulty)}
+                  className="input"
+                >
+                  <option value="easy">Facile</option>
+                  <option value="medium">Moyen</option>
+                  <option value="hard">Difficile</option>
+                </select>
+              </div>
 
-          <div>
-            <label
-              htmlFor="quiz-num-questions"
-              className="block text-sm font-medium text-slate-700 mb-1"
-            >
-              Nombre de questions
-            </label>
-            <select
-              id="quiz-num-questions"
-              value={numQuestions}
-              onChange={(e) => setNumQuestions(Number(e.target.value))}
-              className="input"
-            >
-              {NUM_QUESTIONS_OPTIONS.map((n) => (
-                <option key={n} value={n}>
-                  {n} questions
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
+              <div>
+                <label
+                  htmlFor="quiz-num-questions"
+                  className="block text-sm font-medium text-slate-700 mb-1"
+                >
+                  Nombre de questions
+                </label>
+                <select
+                  id="quiz-num-questions"
+                  value={numQuestions}
+                  onChange={(e) => setNumQuestions(Number(e.target.value))}
+                  className="input"
+                >
+                  {NUM_QUESTIONS_OPTIONS.map((n) => (
+                    <option key={n} value={n}>
+                      {n} questions
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
 
-        <div>
-          <label htmlFor="quiz-theme" className="block text-sm font-medium text-slate-700 mb-1">
-            Thème / chapitre ciblé <span className="text-slate-400 font-normal">(optionnel)</span>
-          </label>
-          <input
-            id="quiz-theme"
-            type="text"
-            value={theme}
-            onChange={(e) => setTheme(e.target.value)}
-            placeholder="Ex. : la Guerre froide"
-            className="input"
-          />
-        </div>
+            <div>
+              <label htmlFor="quiz-theme" className="block text-sm font-medium text-slate-700 mb-1">
+                Thème / chapitre ciblé{' '}
+                <span className="text-slate-400 font-normal">(optionnel)</span>
+              </label>
+              <input
+                id="quiz-theme"
+                type="text"
+                value={theme}
+                onChange={(e) => setTheme(e.target.value)}
+                placeholder="Ex. : la Guerre froide"
+                className="input"
+              />
+            </div>
+          </>
+        )}
 
         <button type="submit" disabled={loading} className="btn-primary w-full">
           {loading ? (
@@ -205,7 +260,7 @@ export default function UploadPage() {
               patientez)
             </>
           ) : (
-            <>🚀 Générer le quiz</>
+            <>🚀 {FORMAT_OPTIONS.find((o) => o.value === format)?.button}</>
           )}
         </button>
 
