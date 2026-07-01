@@ -62,6 +62,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",  # avant CommonMiddleware
     "django.middleware.security.SecurityMiddleware",
+    "apocal.middleware.SecurityHeadersMiddleware",  # Permissions-Policy + CSP (OWASP)
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -234,19 +235,33 @@ CORS_ALLOWED_ORIGINS = config(
 CORS_ALLOW_CREDENTIALS = True
 
 # ----------------------------------------------------------------------------
-# Intégration LLM (Ollama)
+# Intégration LLM (Mistral par défaut + Groq en secours)
 # ----------------------------------------------------------------------------
 # Fournisseur de génération de quiz. 9 valeurs possibles :
-#   "ollama"     -> modèle LOCAL gratuit (défaut, recommandé en développement)
-#   "gemini"     -> API Google Gemini (CLOUD, free tier)
+#   "mistral"    -> API Mistral AI, fournisseur EUROPÉEN (CLOUD, free tier) — DÉFAUT
 #   "groq"       -> API Groq, inférence très rapide (CLOUD, free tier)
+#   "gemini"     -> API Google Gemini (CLOUD, free tier)
 #   "cerebras"   -> API Cerebras Cloud, très rapide (CLOUD, free tier)
-#   "mistral"    -> API Mistral AI, fournisseur EUROPÉEN (CLOUD, free tier)
+#   "ollama"     -> modèle LOCAL gratuit (recommandé en développement souverain)
 #   "openrouter" -> passerelle multi-modèles (CLOUD, modèles ":free" dispo)
 #   "openai"     -> API OpenAI (CLOUD, PAYANT, future version premium)
 #   "anthropic"  -> API Anthropic / Claude (CLOUD, PAYANT, future version premium)
 #   "mock"       -> faux QCM instantanés (tests / dev sans LLM)
-LLM_BACKEND = config("LLM_BACKEND", default="ollama")
+#
+# Défaut = "mistral" (fournisseur européen, meilleur pour le RGPD). En cas
+# d'échec réel de la génération (indisponibilité, quota, clé manquante), la
+# factory bascule automatiquement sur LLM_FALLBACK_BACKEND (voir plus bas).
+LLM_BACKEND = config("LLM_BACKEND", default="mistral")
+
+# --- Backend de SECOURS (fallback) ---
+# Fournisseur activé automatiquement par la factory si le backend primaire
+# ÉCHOUE (LLMError : réseau, quota, clé manquante) — filet de sécurité pour la
+# génération réelle. Défaut = "groq" (cloud très rapide, free tier). Le fallback
+# n'est tenté que si :
+#   - le backend primaire n'est ni "mock" (tests) ni "ollama" (local souverain),
+#   - le backend de secours DIFFÈRE du primaire ET possède une clé API valide.
+# Mettre la même valeur que LLM_BACKEND (ou "") pour DÉSACTIVER tout fallback.
+LLM_FALLBACK_BACKEND = config("LLM_FALLBACK_BACKEND", default="groq")
 
 # --- Ollama (local, gratuit) ---
 OLLAMA_HOST = config("OLLAMA_HOST", default="http://ollama:11434")
@@ -339,7 +354,11 @@ if SECURE_PROD:
     SECURE_REDIRECT_EXEMPT = [r"^health/$"]
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
+    CSRF_COOKIE_HTTPONLY = True  # le token CSRF n'est pas lu en JS (auth par token)
     SESSION_COOKIE_HTTPONLY = True
+    SECURE_REFERRER_POLICY = (
+        "strict-origin-when-cross-origin"  # OWASP (défaut Django : same-origin)
+    )
     SECURE_HSTS_SECONDS = 31536000  # 1 an
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True

@@ -4,7 +4,7 @@ import pytest
 from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
 
-from .models import Question, Quiz
+from .models import Answer, Attempt, Question, Quiz
 
 User = get_user_model()
 
@@ -117,7 +117,8 @@ def test_answer_partial(auth_client, sample_quiz):
     assert response.data["score"] == 5
 
 
-def test_answer_requires_10(auth_client, sample_quiz):
+def test_answer_requires_full_coverage(auth_client, sample_quiz):
+    """Une seule réponse sur un quiz de 10 questions → 400 (couverture incomplète)."""
     response = auth_client.post(
         f"/api/quizzes/{sample_quiz.id}/answer/",
         {"answers": [{"index": 1, "selected_index": 0}]},
@@ -142,6 +143,76 @@ def test_answer_404_for_other_users_quiz(auth_client, other_user):
         format="json",
     )
     assert response.status_code == 404
+
+
+# --- F2 : soumission basée sur le NOMBRE RÉEL de questions (pas 10 en dur) ---
+
+
+@pytest.fixture
+def quiz_15(user) -> Quiz:
+    """Quiz de 15 questions (num_questions variable, > 10) pour vérifier que la
+    soumission n'est pas bloquée à 10 en dur."""
+    quiz = Quiz.objects.create(
+        user=user,
+        title="Quiz 15 questions",
+        source_text="Lorem ipsum.",
+        score=None,
+        num_questions=15,
+    )
+    for i in range(1, 16):
+        Question.objects.create(
+            quiz=quiz,
+            index=i,
+            prompt=f"Question {i} ?",
+            options=["A", "B", "C", "D"],
+            correct_index=0,
+        )
+    return quiz
+
+
+def test_answer_15_questions_all_correct(auth_client, quiz_15):
+    """Un quiz de 15 questions se soumet correctement : score /15, total=15."""
+    response = auth_client.post(
+        f"/api/quizzes/{quiz_15.id}/answer/",
+        {"answers": [{"index": i, "selected_index": 0} for i in range(1, 16)]},
+        format="json",
+    )
+    assert response.status_code == 200, response.data
+    assert response.data["score"] == 15
+    assert response.data["total"] == 15
+    assert len(response.data["details"]) == 15
+    quiz_15.refresh_from_db()
+    assert quiz_15.score == 15
+    # L'Attempt reflète bien le nombre réel de questions.
+    attempt = Attempt.objects.get(quiz=quiz_15, student=quiz_15.user)
+    assert attempt.total == 15
+    assert attempt.score == 15
+    assert Answer.objects.filter(attempt=attempt).count() == 15
+
+
+def test_answer_15_questions_partial_score(auth_client, quiz_15):
+    """Score partiel sur 15 : 10 bonnes + 5 mauvaises → 10/15."""
+    answers = [{"index": i, "selected_index": 0} for i in range(1, 11)] + [
+        {"index": i, "selected_index": 1} for i in range(11, 16)
+    ]
+    response = auth_client.post(
+        f"/api/quizzes/{quiz_15.id}/answer/",
+        {"answers": answers},
+        format="json",
+    )
+    assert response.status_code == 200, response.data
+    assert response.data["score"] == 10
+    assert response.data["total"] == 15
+
+
+def test_answer_10_on_a_15_question_quiz_is_rejected(auth_client, quiz_15):
+    """Soumettre 10 réponses sur un quiz de 15 → 400 (ancien bug : passait)."""
+    response = auth_client.post(
+        f"/api/quizzes/{quiz_15.id}/answer/",
+        {"answers": [{"index": i, "selected_index": 0} for i in range(1, 11)]},
+        format="json",
+    )
+    assert response.status_code == 400
 
 
 # ---------------------------------------------------------------------------
@@ -399,3 +470,196 @@ def test_mistakes_isolation_between_users(auth_client, user, other_user):
     for m in data["mistakes"]:
         assert m["quiz_id"] == alice_quiz.id
         assert m["quiz_title"] == "Quiz d'Alice"
+
+
+# ---------------------------------------------------------------------------
+# Release 2 — Historique des tentatives (Attempt / Answer)
+# ---------------------------------------------------------------------------
+
+
+def _all_correct_payload():
+    """10 bonnes réponses (correct_index=0 partout sur sample_quiz)."""
+    return {"answers": [{"index": i, "selected_index": 0} for i in range(1, 11)]}
+
+
+def test_answer_creates_attempt_and_answers(auth_client, sample_quiz):
+    """À la soumission : un Attempt (number=1) + 10 Answer sont créés,
+    et la réponse JSON expose attempt_id + number (rétro-compat)."""
+    response = auth_client.post(
+        f"/api/quizzes/{sample_quiz.id}/answer/",
+        _all_correct_payload(),
+        format="json",
+    )
+    assert response.status_code == 200, response.data
+    # Ajouts rétro-compatibles.
+    assert response.data["attempt_id"] is not None
+    assert response.data["number"] == 1
+    # La réponse existante reste intacte.
+    assert response.data["score"] == 10
+    assert response.data["total"] == 10
+    assert len(response.data["details"]) == 10
+
+    attempts = Attempt.objects.filter(quiz=sample_quiz, student=sample_quiz.user)
+    assert attempts.count() == 1
+    attempt = attempts.get()
+    assert attempt.number == 1
+    assert attempt.score == 10
+    assert attempt.total == 10
+    # question_order par défaut = séquence naturelle [1..10].
+    assert attempt.question_order == list(range(1, 11))
+    # Un Answer par question.
+    assert Answer.objects.filter(attempt=attempt).count() == 10
+    assert all(a.is_correct for a in attempt.answers.all())
+
+
+def test_answer_accepts_custom_question_order(auth_client, sample_quiz):
+    """Un question_order mélangé fourni au POST est persisté sur l'Attempt."""
+    shuffled = [3, 1, 2, 5, 4, 7, 6, 9, 8, 10]
+    payload = _all_correct_payload()
+    payload["question_order"] = shuffled
+    response = auth_client.post(
+        f"/api/quizzes/{sample_quiz.id}/answer/",
+        payload,
+        format="json",
+    )
+    assert response.status_code == 200, response.data
+    attempt = Attempt.objects.get(quiz=sample_quiz, student=sample_quiz.user)
+    assert attempt.question_order == shuffled
+
+
+def test_attempt_number_increments_on_retest(auth_client, sample_quiz):
+    """Un 2e POST crée une 2e tentative avec number=2."""
+    r1 = auth_client.post(
+        f"/api/quizzes/{sample_quiz.id}/answer/", _all_correct_payload(), format="json"
+    )
+    assert r1.status_code == 200, r1.data
+    assert r1.data["number"] == 1
+
+    r2 = auth_client.post(
+        f"/api/quizzes/{sample_quiz.id}/answer/", _all_correct_payload(), format="json"
+    )
+    assert r2.status_code == 200, r2.data
+    assert r2.data["number"] == 2
+
+    numbers = sorted(
+        Attempt.objects.filter(quiz=sample_quiz, student=sample_quiz.user).values_list(
+            "number", flat=True
+        )
+    )
+    assert numbers == [1, 2]
+
+
+def test_attempts_list_requires_auth(sample_quiz):
+    response = APIClient().get(f"/api/quizzes/{sample_quiz.id}/attempts/")
+    assert response.status_code in (401, 403)
+
+
+def test_attempts_list_returns_user_attempts(auth_client, sample_quiz):
+    """La liste renvoie les tentatives du user, récentes (number décroissant) d'abord."""
+    auth_client.post(
+        f"/api/quizzes/{sample_quiz.id}/answer/", _all_correct_payload(), format="json"
+    )
+    # 2e tentative, tout faux → score 0.
+    auth_client.post(
+        f"/api/quizzes/{sample_quiz.id}/answer/",
+        {"answers": [{"index": i, "selected_index": 1} for i in range(1, 11)]},
+        format="json",
+    )
+
+    response = auth_client.get(f"/api/quizzes/{sample_quiz.id}/attempts/")
+    assert response.status_code == 200
+    data = response.data
+    assert len(data) == 2
+    # Récentes d'abord : number 2 puis 1.
+    assert [a["number"] for a in data] == [2, 1]
+    for entry in data:
+        assert set(entry.keys()) == {"id", "number", "score", "total", "created_at"}
+    # Score de la dernière (tout faux) = 0, première = 10.
+    assert data[0]["score"] == 0
+    assert data[1]["score"] == 10
+
+
+def test_attempts_list_empty_when_never_answered(auth_client, sample_quiz):
+    response = auth_client.get(f"/api/quizzes/{sample_quiz.id}/attempts/")
+    assert response.status_code == 200
+    assert response.data == []
+
+
+def test_attempt_detail_returns_answers(auth_client, sample_quiz):
+    """Le détail d'une tentative expose ses réponses avec le contenu question."""
+    # 7 bonnes + 3 mauvaises.
+    answers = [{"index": i, "selected_index": 0} for i in range(1, 8)] + [
+        {"index": i, "selected_index": 1} for i in range(8, 11)
+    ]
+    post = auth_client.post(
+        f"/api/quizzes/{sample_quiz.id}/answer/",
+        {"answers": answers},
+        format="json",
+    )
+    assert post.status_code == 200, post.data
+    attempt_id = post.data["attempt_id"]
+
+    response = auth_client.get(f"/api/quizzes/{sample_quiz.id}/attempts/{attempt_id}/")
+    assert response.status_code == 200
+    data = response.data
+    assert data["number"] == 1
+    assert data["score"] == 7
+    assert data["total"] == 10
+    assert len(data["answers"]) == 10
+    # Chaque réponse porte le contenu de la question + le choix + la correction.
+    for a in data["answers"]:
+        assert set(a.keys()) == {
+            "index",
+            "prompt",
+            "options",
+            "correct_index",
+            "selected_index",
+            "is_correct",
+        }
+        assert a["options"] == ["A", "B", "C", "D"]
+        assert a["correct_index"] == 0
+    # Les 3 dernières (index 8,9,10) sont fausses.
+    wrong = sorted(a["index"] for a in data["answers"] if not a["is_correct"])
+    assert wrong == [8, 9, 10]
+
+
+def test_attempt_detail_404_for_other_users_attempt(auth_client, other_user):
+    """Une tentative appartenant à un autre user → 404 (scoping strict)."""
+    other_quiz = Quiz.objects.create(user=other_user, title="Privé", source_text="...")
+    for i in range(1, 11):
+        Question.objects.create(
+            quiz=other_quiz,
+            index=i,
+            prompt=f"Q{i}",
+            options=["A", "B", "C", "D"],
+            correct_index=0,
+        )
+    bob_attempt = Attempt.objects.create(
+        quiz=other_quiz, student=other_user, number=1, total=10, score=5
+    )
+
+    # Alice tente d'accéder à la tentative de Bob (via l'id du quiz de Bob).
+    response = auth_client.get(f"/api/quizzes/{other_quiz.id}/attempts/{bob_attempt.id}/")
+    assert response.status_code == 404
+
+
+def test_attempts_isolation_between_users(auth_client, other_user, sample_quiz):
+    """La liste des tentatives ne fuit pas celles d'un autre user sur le même quiz.
+
+    Note : le quiz appartient à `user` (via sample_quiz) ; on vérifie qu'une
+    tentative fabriquée pour `other_user` sur ce quiz n'apparaît jamais dans la
+    liste d'Alice.
+    """
+    # Tentative d'Alice via l'endpoint.
+    auth_client.post(
+        f"/api/quizzes/{sample_quiz.id}/answer/", _all_correct_payload(), format="json"
+    )
+    # Tentative fabriquée pour Bob sur le même quiz (cas limite : scoping student).
+    Attempt.objects.create(quiz=sample_quiz, student=other_user, number=1, total=10, score=3)
+
+    response = auth_client.get(f"/api/quizzes/{sample_quiz.id}/attempts/")
+    assert response.status_code == 200
+    data = response.data
+    # Seule la tentative d'Alice remonte.
+    assert len(data) == 1
+    assert data[0]["score"] == 10

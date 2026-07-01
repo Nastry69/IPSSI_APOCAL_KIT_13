@@ -18,6 +18,7 @@ from .quiz_prompt import (
     build_user_prompt,
     parse_and_validate_quiz,
 )
+from .study_prompt import build_study_user_prompt, system_prompt_for
 
 
 class OllamaLLMClient(LLMClient):
@@ -54,26 +55,43 @@ class OllamaLLMClient(LLMClient):
                 difficulty=difficulty,
                 theme=theme,
             ),
+            # Structured output : JSON SCHEMA pour CONTRAINDRE le modèle (4
+            # options/question). Indispensable avec un petit modèle local.
+            fmt=QUIZ_JSON_SCHEMA,
         )
         return parse_and_validate_quiz(raw, expected_count=num_questions)
 
+    def generate_text(self, source_text: str, title: str, kind: str) -> str:
+        # Génération de TEXTE libre : PAS de `format` JSON (contrairement au quiz).
+        try:
+            system = system_prompt_for(kind)
+        except KeyError as exc:
+            raise LLMError(f"kind inconnu : {kind!r} (attendu 'note' | 'summary').") from exc
+        raw = self._call_ollama(
+            system=system,
+            prompt=build_study_user_prompt(source_text, title, kind),
+            fmt=None,
+        )
+        return raw.strip()
+
     # ----- internals -----
 
-    def _call_ollama(self, system: str, prompt: str) -> str:
+    def _call_ollama(self, system: str, prompt: str, *, fmt: dict | None = None) -> str:
+        payload = {
+            "model": self.model,
+            "system": system,
+            "prompt": prompt,
+            "stream": False,
+            "options": {"temperature": 0.4},  # peu de créativité : on veut du factuel
+        }
+        # `format` (JSON schema) UNIQUEMENT pour le quiz ; en texte libre on laisse
+        # le modèle produire du markdown.
+        if fmt is not None:
+            payload["format"] = fmt
         try:
             response = requests.post(
                 f"{self.host}/api/generate",
-                json={
-                    "model": self.model,
-                    "system": system,
-                    "prompt": prompt,
-                    "stream": False,
-                    "options": {"temperature": 0.4},  # peu de créativité : on veut du factuel
-                    # Structured output : on passe un JSON SCHEMA (pas juste "json")
-                    # pour CONTRAINDRE le modèle à 4 options/question. Indispensable
-                    # avec un petit modèle local qui dérive sinon du format.
-                    "format": QUIZ_JSON_SCHEMA,
-                },
+                json=payload,
                 timeout=self.timeout,
             )
             response.raise_for_status()

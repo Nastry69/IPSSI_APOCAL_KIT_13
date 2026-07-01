@@ -2,14 +2,29 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import UploadPage from './UploadPage';
-import { generateQuiz } from '@/api/llm';
+import { generateQuiz, generateNote, generateSummary } from '@/api/llm';
 
 // On isole la page : pas de vrai appel réseau vers l'API LLM.
 vi.mock('@/api/llm', () => ({
   generateQuiz: vi.fn(),
+  generateNote: vi.fn(),
+  generateSummary: vi.fn(),
 }));
 
 const mockedGenerateQuiz = vi.mocked(generateQuiz);
+const mockedGenerateNote = vi.mocked(generateNote);
+const mockedGenerateSummary = vi.mocked(generateSummary);
+
+/** Réponse StudyDoc factice (fiche/résumé) pour les tests de format. */
+function makeStudyDoc(kind: 'note' | 'summary') {
+  return {
+    id: 7,
+    kind,
+    title: 'Mon cours',
+    content: 'Contenu généré.',
+    created_at: '2026-07-01T00:00:00Z',
+  };
+}
 
 /**
  * Fabrique un faux PDF de taille arbitraire sans allouer réellement la mémoire.
@@ -134,5 +149,73 @@ describe('UploadPage — garde-fou taille PDF (5 Mo)', () => {
     expect(mockedGenerateQuiz).toHaveBeenCalledWith(
       expect.objectContaining({ title: 'Mon cours', pdf: ok }),
     );
+  });
+});
+
+describe('UploadPage — sélecteur de format de génération', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  /**
+   * Remplit le titre + le texte source (>= 200 caractères pour satisfaire le
+   * minLength), puis soumet le formulaire. Le mode par défaut est « texte ».
+   */
+  function fillAndSubmit(container: HTMLElement) {
+    fireEvent.change(screen.getByPlaceholderText(/Histoire/i), {
+      target: { value: 'Mon cours' },
+    });
+    fireEvent.change(screen.getByPlaceholderText(/Collez ici/i), {
+      target: { value: 'x'.repeat(200) },
+    });
+    fireEvent.submit(container.querySelector('form') as HTMLFormElement);
+  }
+
+  it('format « Quiz » (par défaut) → appelle generateQuiz uniquement', async () => {
+    mockedGenerateQuiz.mockResolvedValueOnce({
+      id: 42,
+      title: 'Mon cours',
+      source_text: '',
+      score: null,
+      created_at: '2026-07-01T00:00:00Z',
+      questions: [],
+    });
+
+    const { container } = renderUpload();
+    fillAndSubmit(container);
+
+    await waitFor(() => expect(mockedGenerateQuiz).toHaveBeenCalledTimes(1));
+    expect(mockedGenerateNote).not.toHaveBeenCalled();
+    expect(mockedGenerateSummary).not.toHaveBeenCalled();
+  });
+
+  it('format « Fiche de révision » → appelle generateNote uniquement', async () => {
+    mockedGenerateNote.mockResolvedValueOnce(makeStudyDoc('note'));
+
+    const { container } = renderUpload();
+    fireEvent.click(screen.getByRole('button', { name: /fiche/i }));
+    fillAndSubmit(container);
+
+    await waitFor(() => expect(mockedGenerateNote).toHaveBeenCalledTimes(1));
+    expect(mockedGenerateNote).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Mon cours' }),
+    );
+    expect(mockedGenerateQuiz).not.toHaveBeenCalled();
+    expect(mockedGenerateSummary).not.toHaveBeenCalled();
+  });
+
+  it('format « Résumé » → appelle generateSummary uniquement', async () => {
+    mockedGenerateSummary.mockResolvedValueOnce(makeStudyDoc('summary'));
+
+    const { container } = renderUpload();
+    fireEvent.click(screen.getByRole('button', { name: /résumé/i }));
+    fillAndSubmit(container);
+
+    await waitFor(() => expect(mockedGenerateSummary).toHaveBeenCalledTimes(1));
+    expect(mockedGenerateSummary).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Mon cours' }),
+    );
+    expect(mockedGenerateQuiz).not.toHaveBeenCalled();
+    expect(mockedGenerateNote).not.toHaveBeenCalled();
   });
 });

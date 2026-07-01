@@ -2,14 +2,13 @@ from django.urls import path
 
 from .views import (
     ChangePasswordView,
-    DownloadExportView,
+    ExportView,
     LoginView,
     LogoutView,
     MeView,
     PasswordResetConfirmView,
     PasswordResetRequestView,
     ProfileView,
-    RequestExportView,
     ResendVerificationView,
     SignupView,
     VerifyEmailView,
@@ -32,7 +31,6 @@ urlpatterns = [
     # Profil (modifier / changer mot de passe / supprimer le compte)
     path("profile/", ProfileView.as_view(), name="profile"),
     path("change-password/", ChangePasswordView.as_view(), name="change-password"),
-    # Export RGPD (droit à la portabilité, art. 20)
-    path("export/request/", RequestExportView.as_view(), name="export-request"),
-    path("export/download/", DownloadExportView.as_view(), name="export-download"),
+    # Export RGPD (droit à la portabilité, art. 20) — téléchargement direct multi-format
+    path("export/", ExportView.as_view(), name="export"),
 ]

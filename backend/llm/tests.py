@@ -22,7 +22,7 @@ from pypdf.generic import (
 )
 from rest_framework.test import APIClient
 
-from quizzes.models import Quiz
+from quizzes.models import Quiz, StudyDoc
 
 from .pdf_utils import MAX_PDF_SIZE_BYTES, PDFError, extract_text_from_pdf
 from .serializers import GenerateQuizSerializer
@@ -379,3 +379,136 @@ def test_parse_strips_whitespace_in_prompt_and_options():
     cleaned = parse_and_validate_quiz(json.dumps(payload))
     assert cleaned[0]["prompt"] == "Question espacee"
     assert cleaned[0]["options"] == ["A", "B", "C", "D"]
+
+
+# ===========================================================================
+# Release 2 — Documents de révision : fiche de révision (note) & résumé (summary)
+# Endpoints generate-note / generate-summary + study-docs (liste / détail).
+# ===========================================================================
+
+_LONG_TEXT = "Lorem ipsum dolor sit amet " * 20  # > 200 caractères
+
+
+@override_settings(LLM_BACKEND="mock")
+def test_generate_note_creates_studydoc(auth_client):
+    response = auth_client.post(
+        "/api/llm/generate-note/",
+        {"title": "Ma fiche de cours", "source_text": _LONG_TEXT},
+        format="multipart",
+    )
+    assert response.status_code == 201, response.data
+    assert response.data["kind"] == "note"
+    assert response.data["title"] == "Ma fiche de cours"
+    assert response.data["content"].strip()
+    assert set(response.data.keys()) == {"id", "kind", "title", "content", "created_at"}
+    doc = StudyDoc.objects.get(id=response.data["id"])
+    assert doc.kind == StudyDoc.Kind.NOTE
+    assert doc.title == "Ma fiche de cours"
+
+
+@override_settings(LLM_BACKEND="mock")
+def test_generate_summary_creates_studydoc(auth_client):
+    response = auth_client.post(
+        "/api/llm/generate-summary/",
+        {"title": "Mon résumé", "source_text": _LONG_TEXT},
+        format="multipart",
+    )
+    assert response.status_code == 201, response.data
+    assert response.data["kind"] == "summary"
+    assert StudyDoc.objects.filter(title="Mon résumé", kind=StudyDoc.Kind.SUMMARY).count() == 1
+
+
+@override_settings(LLM_BACKEND="mock")
+def test_generate_note_rejects_short_text(auth_client):
+    response = auth_client.post(
+        "/api/llm/generate-note/",
+        {"title": "Trop court", "source_text": "Court"},
+        format="multipart",
+    )
+    assert response.status_code == 400
+    assert StudyDoc.objects.count() == 0
+
+
+@override_settings(LLM_BACKEND="mock")
+def test_generate_summary_requires_text_or_pdf(auth_client):
+    response = auth_client.post(
+        "/api/llm/generate-summary/",
+        {"title": "Sans contenu"},
+        format="multipart",
+    )
+    assert response.status_code == 400
+
+
+def test_generate_note_requires_auth():
+    response = APIClient().post(
+        "/api/llm/generate-note/",
+        {"title": "X", "source_text": "x" * 200},
+        format="multipart",
+    )
+    assert response.status_code in (401, 403)
+
+
+def test_generate_summary_requires_auth():
+    response = APIClient().post(
+        "/api/llm/generate-summary/",
+        {"title": "X", "source_text": "x" * 200},
+        format="multipart",
+    )
+    assert response.status_code in (401, 403)
+
+
+@override_settings(LLM_BACKEND="mock")
+def test_study_docs_list_and_detail(auth_client):
+    # Crée une fiche et un résumé pour l'utilisateur authentifié.
+    note = auth_client.post(
+        "/api/llm/generate-note/",
+        {"title": "Fiche A", "source_text": _LONG_TEXT},
+        format="multipart",
+    ).data
+    auth_client.post(
+        "/api/llm/generate-summary/",
+        {"title": "Résumé B", "source_text": _LONG_TEXT},
+        format="multipart",
+    )
+
+    # Liste : les deux documents du user.
+    listing = auth_client.get("/api/llm/study-docs/")
+    assert listing.status_code == 200
+    ids = {d["id"] for d in listing.data}
+    assert note["id"] in ids
+    assert len(listing.data) == 2
+
+    # Détail : même forme que le contrat frontend.
+    detail = auth_client.get(f"/api/llm/study-docs/{note['id']}/")
+    assert detail.status_code == 200
+    assert detail.data["id"] == note["id"]
+    assert detail.data["kind"] == "note"
+    assert set(detail.data.keys()) == {"id", "kind", "title", "content", "created_at"}
+
+
+def test_study_docs_requires_auth():
+    response = APIClient().get("/api/llm/study-docs/")
+    assert response.status_code in (401, 403)
+
+
+@override_settings(LLM_BACKEND="mock")
+def test_study_doc_detail_is_scoped_by_owner():
+    """Un document d'un autre utilisateur → 404 (isolation par owner)."""
+    owner = User.objects.create_user(username="bob", password="motdepasse123")
+    doc = StudyDoc.objects.create(
+        owner=owner,
+        kind=StudyDoc.Kind.NOTE,
+        title="Privé de Bob",
+        content="# secret",
+    )
+
+    intruder = User.objects.create_user(username="mallory", password="motdepasse123")
+    client = APIClient()
+    client.force_authenticate(user=intruder)
+
+    # Détail scopé : 404 pour un doc qui ne lui appartient pas.
+    assert client.get(f"/api/llm/study-docs/{doc.id}/").status_code == 404
+    # Liste : ne voit pas le doc de Bob.
+    listing = client.get("/api/llm/study-docs/")
+    assert listing.status_code == 200
+    assert listing.data == []

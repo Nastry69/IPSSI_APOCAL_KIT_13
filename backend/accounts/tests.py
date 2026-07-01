@@ -150,7 +150,10 @@ def test_signup_requires_consent(client):
 
 
 # ---------------------------------------------------------------------------
-# Sprint A RGPD — Export / portabilité (M4)
+# Sprint A RGPD — Export / portabilité (M4) — téléchargement direct multi-format
+#
+# Nouvel endpoint : GET /api/accounts/export/?format=<json|csv|html|xlsx>
+# Authentifié par token (IsAuthenticated), renvoie un fichier en pièce jointe.
 # ---------------------------------------------------------------------------
 
 
@@ -162,28 +165,8 @@ def _auth(client, user):
     return client
 
 
-@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
-def test_export_request_sends_email(client, user):
-    from django.core import mail
-
-    mail.outbox = []
-    _auth(client, user)
-    resp = client.post("/api/accounts/export/request/")
-    assert resp.status_code == 200, resp.data
-    assert "lien" in resp.data["detail"].lower()
-    # En backend locmem, l'email d'export est capturé dans outbox.
-    assert len(mail.outbox) == 1
-    assert user.email in mail.outbox[0].to
-    # Le corps contient le lien de téléchargement backend.
-    assert "/api/accounts/export/download/?token=" in mail.outbox[0].body
-
-
-def test_export_download_valid_token(client, user):
-    import json
-
-    from accounts.tokens import make_export_token
-
-    # Un quiz + une question pour vérifier la structure imbriquée.
+def _seed_quiz(user):
+    """Crée un quiz + une question pour vérifier le contenu de l'export."""
     quiz = user.quizzes.create(title="Cours 1", source_text="Texte du cours", score=1)
     quiz.questions.create(
         index=1,
@@ -192,10 +175,24 @@ def test_export_download_valid_token(client, user):
         correct_index=0,
         selected_index=0,
     )
+    return quiz
 
-    token = make_export_token(user)
-    resp = client.get(f"/api/accounts/export/download/?token={token}")
-    assert resp.status_code == 200
+
+def test_export_requires_auth(client):
+    # Endpoint protégé : sans authentification -> 401/403.
+    resp = client.get("/api/accounts/export/")
+    assert resp.status_code in (401, 403)
+
+
+def test_export_json_default_format(client, user):
+    # Sans paramètre `format` -> JSON par défaut.
+    import json
+
+    _seed_quiz(user)
+    _auth(client, user)
+
+    resp = client.get("/api/accounts/export/")
+    assert resp.status_code == 200, getattr(resp, "data", resp)
     assert resp["Content-Type"].startswith("application/json")
     assert resp["Content-Disposition"] == ('attachment; filename="mes-donnees-edututor.json"')
 
@@ -208,39 +205,104 @@ def test_export_download_valid_token(client, user):
     assert data["quizzes"][0]["questions"][0]["correct_index"] == 0
 
 
-def test_export_download_rejects_invalid_token(client):
-    # Token bidon -> 400 générique.
-    resp = client.get("/api/accounts/export/download/?token=nimportequoi")
-    assert resp.status_code == 400
+def test_export_json_explicit_format(client, user):
+    _seed_quiz(user)
+    _auth(client, user)
+    resp = client.get("/api/accounts/export/?format=json")
+    assert resp.status_code == 200
+    assert resp["Content-Type"].startswith("application/json")
+    assert resp["Content-Disposition"] == ('attachment; filename="mes-donnees-edututor.json"')
 
-    # Token absent -> 400 également.
-    resp = client.get("/api/accounts/export/download/")
-    assert resp.status_code == 400
 
-    # Token d'un autre salt (validation email) -> rejeté par read_export_token.
-    from accounts.tokens import make_email_verify_token
+def test_export_csv_format(client, user):
+    _seed_quiz(user)
+    _auth(client, user)
 
-    other = User.objects.create_user(
-        username="dave", email="dave@test.com", password="motdepasse123"
+    resp = client.get("/api/accounts/export/?format=csv")
+    assert resp.status_code == 200
+    assert resp["Content-Type"].startswith("text/csv")
+    assert resp["Content-Disposition"] == ('attachment; filename="mes-donnees-edututor.csv"')
+
+    body = resp.content.decode("utf-8-sig")
+    # Sections lisibles + données de l'utilisateur (compte, quiz, question).
+    assert "# Compte" in body
+    assert "# Quiz" in body
+    assert "# Questions" in body
+    assert user.email in body
+    assert "Cours 1" in body
+    assert "Q ?" in body
+
+
+def test_export_html_format_escapes_user_content(client, user):
+    # Le source_text vient de l'utilisateur : il doit être ÉCHAPPÉ dans le HTML.
+    _auth(client, user)
+    user.quizzes.create(
+        title="<script>alert(1)</script>",
+        source_text="<b>malicieux</b>",
+        score=None,
     )
-    wrong = make_email_verify_token(other)
-    resp = client.get(f"/api/accounts/export/download/?token={wrong}")
-    assert resp.status_code == 400
+
+    resp = client.get("/api/accounts/export/?format=html")
+    assert resp.status_code == 200
+    assert resp["Content-Type"].startswith("text/html")
+    assert resp["Content-Disposition"] == ('attachment; filename="mes-donnees-edututor.html"')
+
+    body = resp.content.decode("utf-8")
+    assert "<h1>" in body  # page structurée
+    assert user.email in body
+    # Le contenu utilisateur est échappé (pas de balise script/b active).
+    assert "<script>alert(1)</script>" not in body
+    assert "&lt;script&gt;" in body
+    assert "<b>malicieux</b>" not in body
+    assert "&lt;b&gt;malicieux&lt;/b&gt;" in body
+
+
+def test_export_xlsx_format(client, user):
+    import io
+
+    from openpyxl import load_workbook
+
+    _seed_quiz(user)
+    _auth(client, user)
+
+    resp = client.get("/api/accounts/export/?format=xlsx")
+    assert resp.status_code == 200
+    assert resp["Content-Type"] == (
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    assert resp["Content-Disposition"] == ('attachment; filename="mes-donnees-edututor.xlsx"')
+
+    # Magic number ZIP (un .xlsx est une archive ZIP).
+    assert resp.content[:4] == b"PK\x03\x04"
+
+    # Le classeur est chargeable et contient les feuilles + les données attendues.
+    workbook = load_workbook(io.BytesIO(resp.content))
+    assert "Compte-Profil" in workbook.sheetnames
+    assert "Quiz" in workbook.sheetnames
+    assert "Questions" in workbook.sheetnames
+
+    account_values = [cell.value for row in workbook["Compte-Profil"].iter_rows() for cell in row]
+    assert user.email in account_values
+    quiz_values = [cell.value for row in workbook["Quiz"].iter_rows() for cell in row]
+    assert "Cours 1" in quiz_values
+
+
+def test_export_invalid_format_returns_400(client, user):
+    _auth(client, user)
+    resp = client.get("/api/accounts/export/?format=pdf")
+    assert resp.status_code == 400, getattr(resp, "data", resp)
 
 
 def test_export_isolation(client, user):
+    # L'export ne renvoie QUE les données de l'utilisateur authentifié.
     import json
 
-    from accounts.tokens import make_export_token
-
-    # `user` (alice) possède un quiz ; bob a le sien.
     user.quizzes.create(title="Quiz Alice", source_text="secret alice", score=None)
     bob = User.objects.create_user(username="bob", email="bob@test.com", password="motdepasse123")
     bob.quizzes.create(title="Quiz Bob", source_text="texte bob", score=None)
 
-    # Le token de bob ne doit renvoyer QUE les données de bob.
-    token = make_export_token(bob)
-    resp = client.get(f"/api/accounts/export/download/?token={token}")
+    _auth(client, bob)
+    resp = client.get("/api/accounts/export/?format=json")
     assert resp.status_code == 200
     data = json.loads(resp.content)
     assert data["account"]["email"] == bob.email
@@ -296,11 +358,12 @@ def test_verify_email_invalid_token_returns_400(client, user):
 
 
 def test_verify_email_wrong_salt_token_returns_400(client, user):
-    # Token signé avec un AUTRE salt (export) -> refusé par read_email_verify_token.
-    from accounts.models import get_or_create_profile
-    from accounts.tokens import make_export_token
+    # Token signé avec un AUTRE salt -> refusé par read_email_verify_token.
+    from django.core import signing
 
-    wrong = make_export_token(user)
+    from accounts.models import get_or_create_profile
+
+    wrong = signing.dumps({"uid": user.pk}, salt="un.autre.salt")
     resp = client.post("/api/accounts/verify-email/", {"token": wrong}, format="json")
     assert resp.status_code == 400, resp.data
     assert get_or_create_profile(user).email_verified is False

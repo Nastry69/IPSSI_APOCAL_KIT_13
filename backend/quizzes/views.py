@@ -1,13 +1,16 @@
 """
 Endpoints quizz :
     GET   /api/quizzes/                — historique du user connecté
-    GET   /api/quizzes/<id>/           — détail (avec les 10 questions)
-    POST  /api/quizzes/<id>/answer/    — soumet 10 réponses, renvoie le score
+    GET   /api/quizzes/<id>/           — détail (avec toutes les questions)
+    POST  /api/quizzes/<id>/answer/    — soumet N réponses (N = nb réel de
+                                         questions du quiz), renvoie le score /N
 """
 
 import secrets
 
-from django.db.models import Avg, Count, F, Max
+from django.contrib.auth import get_user_model
+from django.db import transaction
+from django.db.models import Avg, Count, F, Max, Q
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework import generics, status
@@ -17,15 +20,23 @@ from rest_framework.views import APIView
 
 from accounts.permissions import IsTeacher
 
-from .models import Classroom, Question, Quiz
+from .models import Answer, Attempt, Classroom, Question, Quiz
 from .serializers import (
+    AddStudentSerializer,
+    AttemptDetailSerializer,
+    AttemptListSerializer,
+    ClassProgressStudentSerializer,
     ClassroomCreateSerializer,
+    ClassroomRenameSerializer,
     ClassroomSerializer,
     JoinClassSerializer,
     QuizSerializer,
     QuizSummarySerializer,
+    StudentIdentitySerializer,
     SubmitAnswersSerializer,
 )
+
+User = get_user_model()
 
 
 class QuizListView(generics.ListAPIView):
@@ -43,7 +54,7 @@ class QuizListView(generics.ListAPIView):
 
 
 class QuizDetailView(generics.RetrieveAPIView):
-    """Détail d'un quiz (les 10 questions complètes)."""
+    """Détail d'un quiz (toutes ses questions complètes)."""
 
     serializer_class = QuizSerializer
     permission_classes = [IsAuthenticated]
@@ -53,7 +64,8 @@ class QuizDetailView(generics.RetrieveAPIView):
 
 
 class AnswerQuizView(APIView):
-    """Reçoit 10 réponses, calcule le score, met à jour le quiz."""
+    """Reçoit N réponses (N = nombre réel de questions du quiz), calcule le
+    score, met à jour le quiz."""
 
     permission_classes = [IsAuthenticated]
 
@@ -61,18 +73,15 @@ class AnswerQuizView(APIView):
         request=SubmitAnswersSerializer,
         responses={200: OpenApiResponse(description="{ score, total, details }")},
         description=(
-            "Soumet les 10 réponses et reçoit le détail de la correction. "
-            "Le score est persisté sur le quiz."
+            "Soumet exactement N réponses (N = nombre réel de questions du quiz, "
+            "de 5 à 20) et reçoit le détail de la correction. Le score /N est "
+            "persisté sur le quiz."
         ),
     )
     def post(self, request, pk: int):
         quiz = get_object_or_404(Quiz, pk=pk, user=request.user)
 
-        serializer = SubmitAnswersSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        answers = serializer.validated_data["answers"]
-
-        # Index pour lookup rapide
+        # Index pour lookup rapide + nombre RÉEL de questions du quiz.
         questions_by_idx = {q.index: q for q in quiz.questions.all()}
         expected = len(questions_by_idx)
         if expected == 0:
@@ -81,7 +90,18 @@ class AnswerQuizView(APIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
-        # Le nombre de réponses doit couvrir exactement les questions 1..expected.
+        # On transmet le nombre attendu au serializer via le contexte : la
+        # validation « exactement N réponses couvrant 1..N » se base sur le
+        # nombre réel de questions, jamais sur une constante.
+        serializer = SubmitAnswersSerializer(
+            data=request.data, context={"expected_count": expected}
+        )
+        serializer.is_valid(raise_exception=True)
+        answers = serializer.validated_data["answers"]
+        question_order = serializer.validated_data.get("question_order")
+
+        # Contrôle final défensif (au cas où le serializer serait appelé sans
+        # contexte) : les réponses couvrent exactement les questions 1..expected.
         submitted = sorted(a["index"] for a in answers)
         if submitted != list(range(1, expected + 1)):
             return Response(
@@ -91,6 +111,9 @@ class AnswerQuizView(APIView):
 
         details = []
         score = 0
+        # [Release 2] On collecte les réponses par question pour créer les Answer
+        # de la tentative sans re-parcourir la liste.
+        answer_rows = []
         for ans in answers:
             q = questions_by_idx[ans["index"]]
             correct = q.correct_index == ans["selected_index"]
@@ -98,7 +121,7 @@ class AnswerQuizView(APIView):
                 score += 1
             # [Lot 6] On mémorise la réponse choisie pour la révision des erreurs.
             q.selected_index = ans["selected_index"]
-            q.save(update_fields=["selected_index"])
+            answer_rows.append((q, ans["selected_index"], correct))
             details.append(
                 {
                     "index": ans["index"],
@@ -108,16 +131,91 @@ class AnswerQuizView(APIView):
                 }
             )
 
-        quiz.score = score
-        quiz.save(update_fields=["score", "updated_at"])
+        # Ordre d'affichage : payload fourni sinon séquence naturelle [1..expected].
+        order = question_order if question_order else list(range(1, expected + 1))
+
+        # [Release 2] Persistance atomique : dernière réponse par question
+        # (compat Lot 6), score du quiz, et nouvelle tentative + réponses.
+        with transaction.atomic():
+            for q, _selected_index, _correct in answer_rows:
+                q.save(update_fields=["selected_index"])
+
+            quiz.score = score
+            quiz.save(update_fields=["score", "updated_at"])
+
+            # N° de tentative = max existant (ce user + ce quiz) + 1.
+            last_number = (
+                Attempt.objects.filter(quiz=quiz, student=request.user).aggregate(m=Max("number"))[
+                    "m"
+                ]
+                or 0
+            )
+            attempt = Attempt.objects.create(
+                quiz=quiz,
+                student=request.user,
+                number=last_number + 1,
+                total=expected,
+                score=score,
+                question_order=order,
+            )
+            Answer.objects.bulk_create(
+                [
+                    Answer(
+                        attempt=attempt,
+                        question=q,
+                        selected_index=selected_index,
+                        is_correct=correct,
+                    )
+                    for q, selected_index, correct in answer_rows
+                ]
+            )
 
         return Response(
             {
                 "score": score,
                 "total": expected,
                 "details": details,
+                "attempt_id": attempt.id,
+                "number": attempt.number,
             }
         )
+
+
+class AttemptListView(generics.ListAPIView):
+    """GET /api/quizzes/<id>/attempts/ — tentatives du user sur ce quiz.
+
+    Scoping STRICT : uniquement les tentatives de request.user, les plus
+    récentes d'abord.
+    """
+
+    serializer_class = AttemptListSerializer
+    permission_classes = [IsAuthenticated]
+    pagination_class = None
+
+    def get_queryset(self):
+        quiz = get_object_or_404(Quiz, pk=self.kwargs["pk"], user=self.request.user)
+        return Attempt.objects.filter(quiz=quiz, student=self.request.user).order_by(
+            "-number", "-created_at"
+        )
+
+    @extend_schema(
+        responses={200: AttemptListSerializer(many=True)},
+        description="Liste des tentatives de l'utilisateur pour ce quiz (récentes d'abord).",
+    )
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)
+
+
+class AttemptDetailView(generics.RetrieveAPIView):
+    """GET /api/quizzes/<id>/attempts/<attempt_id>/ — détail d'une tentative
+    avec ses réponses (pour rejouer). 404 si la tentative n'appartient pas au user."""
+
+    serializer_class = AttemptDetailSerializer
+    permission_classes = [IsAuthenticated]
+    lookup_url_kwarg = "attempt_id"
+
+    def get_queryset(self):
+        return Attempt.objects.filter(quiz_id=self.kwargs["pk"], student=self.request.user)
 
 
 # ---------------------------------------------------------------------------
@@ -281,7 +379,12 @@ class JoinClassView(APIView):
 
 
 class ClassroomDetailView(APIView):
-    """GET : détail d'une classe + liste des élèves (enseignant propriétaire)."""
+    """Gestion d'une classe par son enseignant PROPRIÉTAIRE (404 sinon).
+
+    GET    : détail d'une classe + liste des élèves.
+    PATCH  : renomme la classe (body { name } — alias { title }).
+    DELETE : supprime la classe.
+    """
 
     permission_classes = [IsAuthenticated, IsTeacher]
 
@@ -298,3 +401,201 @@ class ClassroomDetailView(APIView):
             for s in classroom.students.all()
         ]
         return Response(data)
+
+    @extend_schema(request=ClassroomRenameSerializer, responses={200: ClassroomSerializer})
+    def patch(self, request, pk: int):
+        # 404 si la classe n'appartient pas à l'enseignant connecté (ne divulgue
+        # pas l'existence d'une classe d'un autre prof).
+        classroom = get_object_or_404(Classroom, pk=pk, teacher=request.user)
+        serializer = ClassroomRenameSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        classroom.name = serializer.validated_data["name"]
+        classroom.save(update_fields=["name"])
+        return Response(ClassroomSerializer(classroom).data)
+
+    @extend_schema(responses={204: OpenApiResponse(description="Classe supprimée")})
+    def delete(self, request, pk: int):
+        classroom = get_object_or_404(Classroom, pk=pk, teacher=request.user)
+        classroom.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class ClassStudentsView(APIView):
+    """POST /api/classes/<pk>/students/ — ajoute un élève à la classe par son
+    email OU username (body { identifier }).
+
+    Réservé à l'enseignant PROPRIÉTAIRE de la classe (404 sinon). 404 aussi si
+    l'utilisateur ciblé n'existe pas ou n'est pas un élève.
+    """
+
+    permission_classes = [IsAuthenticated, IsTeacher]
+
+    @extend_schema(
+        request=AddStudentSerializer,
+        responses={200: OpenApiResponse(description="Classe + élèves")},
+    )
+    def post(self, request, pk: int):
+        classroom = get_object_or_404(Classroom, pk=pk, teacher=request.user)
+        serializer = AddStudentSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        identifier = serializer.validated_data["identifier"]
+
+        # Résolution par email OU username (insensible à la casse sur l'email).
+        student = User.objects.filter(Q(email__iexact=identifier) | Q(username=identifier)).first()
+        if student is None or not getattr(student, "is_student", False):
+            # 404 : l'utilisateur n'existe pas OU n'est pas un élève (on ne
+            # distingue pas les deux cas pour ne rien divulguer).
+            return Response(
+                {"detail": "Aucun élève ne correspond à cet identifiant."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        classroom.students.add(student)
+        data = ClassroomSerializer(classroom).data
+        data["students"] = [
+            {
+                "id": s.id,
+                "name": s.get_full_name() or s.username,
+                "email": s.email,
+            }
+            for s in classroom.students.all()
+        ]
+        return Response(data)
+
+
+class ClassStudentDetailView(APIView):
+    """DELETE /api/classes/<pk>/students/<student_id>/ — retire un élève de la
+    classe. Réservé à l'enseignant PROPRIÉTAIRE de la classe (404 sinon)."""
+
+    permission_classes = [IsAuthenticated, IsTeacher]
+
+    @extend_schema(responses={204: OpenApiResponse(description="Élève retiré")})
+    def delete(self, request, pk: int, student_id: int):
+        classroom = get_object_or_404(Classroom, pk=pk, teacher=request.user)
+        if not classroom.students.filter(pk=student_id).exists():
+            return Response(
+                {"detail": "Élève introuvable dans cette classe."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        classroom.students.remove(student_id)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+# ---------------------------------------------------------------------------
+# Release 2 — Espace prof : suivi de la progression des élèves d'une classe
+# ---------------------------------------------------------------------------
+
+
+def _get_owned_classroom_or_404(user, class_id: int) -> Classroom:
+    """Récupère la classe `class_id` UNIQUEMENT si `user` en est le teacher.
+
+    SÉCURITÉ : le filtre `teacher=user` garantit qu'un enseignant ne peut jamais
+    ouvrir la progression d'une classe qu'il ne possède pas — on renvoie 404
+    (et non 403) pour ne pas divulguer l'existence de la classe.
+    """
+    return get_object_or_404(Classroom, pk=class_id, teacher=user)
+
+
+class ClassProgressView(APIView):
+    """GET /api/classes/<class_id>/progress/ — progression des élèves de la classe.
+
+    Réservé à l'enseignant PROPRIÉTAIRE de la classe (404 sinon). Pour chaque
+    élève de la classe, on agrège ses `Attempt` (tous quizzes confondus) en KPIs
+    (nombre de quiz passés, moyenne, meilleur / dernier score) et en une liste
+    `evolution` triée chronologiquement — même logique d'agrégation que
+    `StatsView`, mais côté enseignant et par élève.
+    """
+
+    permission_classes = [IsAuthenticated, IsTeacher]
+
+    @extend_schema(
+        responses={200: ClassProgressStudentSerializer(many=True)},
+        description=(
+            "Progression de chaque élève de la classe (KPIs + évolution "
+            "chronologique). Enseignant propriétaire uniquement (404 sinon)."
+        ),
+    )
+    def get(self, request, class_id: int):
+        classroom = _get_owned_classroom_or_404(request.user, class_id)
+
+        # On récupère toutes les tentatives des élèves de la classe en une seule
+        # requête (select_related pour éviter le N+1 sur quiz.title), puis on
+        # regroupe en Python par élève — tri chronologique global.
+        students = list(classroom.students.all())
+        attempts_by_student: dict[int, list[Attempt]] = {s.id: [] for s in students}
+        attempts = (
+            Attempt.objects.filter(student__in=students)
+            .select_related("quiz")
+            .order_by("created_at", "id")
+        )
+        for attempt in attempts:
+            # Un élève a pu quitter la classe entre-temps : on ne garde que les
+            # tentatives des élèves actuellement membres.
+            if attempt.student_id in attempts_by_student:
+                attempts_by_student[attempt.student_id].append(attempt)
+
+        payload = []
+        for student in students:
+            student_attempts = attempts_by_student[student.id]
+            evolution = [
+                {
+                    "attempt_id": a.id,
+                    "quiz_id": a.quiz_id,
+                    "quiz_title": a.quiz.title,
+                    "number": a.number,
+                    "score": a.score,
+                    "total": a.total,
+                    "created_at": a.created_at,
+                }
+                for a in student_attempts
+            ]
+            # `quizzes_taken` = tentatives avec un score renseigné (comme StatsView).
+            scored = [a.score for a in student_attempts if a.score is not None]
+            payload.append(
+                {
+                    "student": StudentIdentitySerializer(student).data,
+                    "quizzes_taken": len(scored),
+                    "average_score": round(sum(scored) / len(scored), 1) if scored else None,
+                    "best_score": max(scored) if scored else None,
+                    "last_score": scored[-1] if scored else None,
+                    "evolution": evolution,
+                }
+            )
+
+        return Response(payload)
+
+
+class StudentAttemptDetailView(APIView):
+    """GET /api/classes/<class_id>/students/<student_id>/attempts/<attempt_id>/
+
+    Détail d'une tentative (avec ses réponses) d'un élève, pour l'enseignant.
+
+    SÉCURITÉ (triple contrôle, sinon 404) :
+      1. la classe `class_id` appartient à l'enseignant connecté ;
+      2. l'élève `student_id` est membre de cette classe ;
+      3. la tentative `attempt_id` appartient bien à cet élève.
+    """
+
+    permission_classes = [IsAuthenticated, IsTeacher]
+
+    @extend_schema(
+        responses={200: AttemptDetailSerializer},
+        description=(
+            "Détail (réponses) d'une tentative d'un élève de la classe. "
+            "Autorisé seulement si la classe appartient à l'enseignant, que "
+            "l'élève est membre de la classe et que la tentative est la sienne "
+            "(404 sinon)."
+        ),
+    )
+    def get(self, request, class_id: int, student_id: int, attempt_id: int):
+        # 1. La classe doit appartenir à l'enseignant connecté.
+        classroom = _get_owned_classroom_or_404(request.user, class_id)
+        # 2. L'élève doit être membre de CETTE classe.
+        if not classroom.students.filter(pk=student_id).exists():
+            return Response(
+                {"detail": "Élève introuvable dans cette classe."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        # 3. La tentative doit appartenir à cet élève.
+        attempt = get_object_or_404(Attempt, pk=attempt_id, student_id=student_id)
+        return Response(AttemptDetailSerializer(attempt).data)
