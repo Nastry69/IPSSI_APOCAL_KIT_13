@@ -2,7 +2,7 @@
 
 from rest_framework import serializers
 
-from .models import Classroom, Question, Quiz
+from .models import Answer, Attempt, Classroom, Question, Quiz
 
 
 class QuestionSerializer(serializers.ModelSerializer):
@@ -54,9 +54,18 @@ class AnswerItemSerializer(serializers.Serializer):
 class SubmitAnswersSerializer(serializers.Serializer):
     """POST /api/quizzes/<id>/answer/ — le nombre de réponses doit correspondre
     au nombre de questions du quiz (contrôle final dans la vue, qui connaît le
-    quiz ; ici on vérifie seulement l'absence de doublon d'index)."""
+    quiz ; ici on vérifie seulement l'absence de doublon d'index).
+
+    `question_order` (optionnel) : ordre d'affichage des questions pour le
+    retest mélangé. Absent → ordre naturel [1..N] appliqué côté vue.
+    """
 
     answers = AnswerItemSerializer(many=True)
+    question_order = serializers.ListField(
+        child=serializers.IntegerField(min_value=1, max_value=20),
+        required=False,
+        help_text="Ordre (mélangé) des index de questions pour cette tentative.",
+    )
 
     def validate_answers(self, value):
         if not value:
@@ -65,6 +74,58 @@ class SubmitAnswersSerializer(serializers.Serializer):
         if len(set(indices)) != len(indices):
             raise serializers.ValidationError("Les indices de réponses ne doivent pas se répéter.")
         return value
+
+    def validate_question_order(self, value):
+        if value and len(set(value)) != len(value):
+            raise serializers.ValidationError(
+                "Les index de question_order ne doivent pas se répéter."
+            )
+        return value
+
+
+# ---------------------------------------------------------------------------
+# Release 2 — Historique des tentatives (Attempt / Answer)
+# ---------------------------------------------------------------------------
+
+
+class AttemptListSerializer(serializers.ModelSerializer):
+    """Version compacte pour lister les tentatives d'un quiz."""
+
+    class Meta:
+        model = Attempt
+        fields = ["id", "number", "score", "total", "created_at"]
+        read_only_fields = fields
+
+
+class AttemptAnswerSerializer(serializers.ModelSerializer):
+    """Une réponse d'une tentative, enrichie du contenu de la question
+    (pour rejouer / réviser la tentative)."""
+
+    index = serializers.IntegerField(source="question.index", read_only=True)
+    prompt = serializers.CharField(source="question.prompt", read_only=True)
+    options = serializers.JSONField(source="question.options", read_only=True)
+    correct_index = serializers.IntegerField(source="question.correct_index", read_only=True)
+
+    class Meta:
+        model = Answer
+        fields = ["index", "prompt", "options", "correct_index", "selected_index", "is_correct"]
+        read_only_fields = fields
+
+
+class AttemptDetailSerializer(serializers.ModelSerializer):
+    """Détail d'une tentative avec toutes ses réponses (pour rejouer)."""
+
+    answers = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Attempt
+        fields = ["id", "number", "score", "total", "question_order", "created_at", "answers"]
+        read_only_fields = fields
+
+    def get_answers(self, obj: Attempt):
+        # Tri par l'index de la question pour un rendu déterministe.
+        qs = obj.answers.select_related("question").order_by("question__index")
+        return AttemptAnswerSerializer(qs, many=True).data
 
 
 # ---------------------------------------------------------------------------

@@ -2,12 +2,30 @@ import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { getQuiz, submitAnswers, type Quiz, type AnswerResult } from '@/api/quizzes';
 
+/**
+ * Mélange une copie du tableau (Fisher-Yates). Ne mute pas l'entrée.
+ * Utilisé par le mode « Refaire mélangé » (Release 2) pour ré-ordonner
+ * l'affichage des questions sans toucher aux données du quiz.
+ */
+function shuffle<T>(items: T[]): T[] {
+  const out = [...items];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const tmp = out[i]!;
+    out[i] = out[j]!;
+    out[j] = tmp;
+  }
+  return out;
+}
+
 export default function QuizPage() {
   const { id } = useParams<{ id: string }>();
   const quizId = Number(id);
 
   const [quiz, setQuiz] = useState<Quiz | null>(null);
   const [answers, setAnswers] = useState<Record<number, number>>({});
+  /** Ordre d'affichage des questions (liste d'index). Vide = ordre naturel. */
+  const [displayOrder, setDisplayOrder] = useState<number[]>([]);
   const [result, setResult] = useState<AnswerResult | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -16,10 +34,26 @@ export default function QuizPage() {
   useEffect(() => {
     setLoading(true);
     getQuiz(quizId)
-      .then(setQuiz)
+      .then((q) => {
+        setQuiz(q);
+        setDisplayOrder(q.questions.map((question) => question.index));
+      })
       .catch(() => setError('Impossible de charger ce quiz.'))
       .finally(() => setLoading(false));
   }, [quizId]);
+
+  /**
+   * Relance une tentative propre en mélangeant l'ordre d'affichage des
+   * questions (Fisher-Yates). Réinitialise les réponses et la correction.
+   */
+  const handleRetestShuffled = () => {
+    if (!quiz) return;
+    setDisplayOrder(shuffle(quiz.questions.map((q) => q.index)));
+    setAnswers({});
+    setResult(null);
+    setError(null);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   const handleSelect = (questionIndex: number, optionIndex: number) => {
     if (result) return; // déjà soumis
@@ -34,7 +68,8 @@ export default function QuizPage() {
         index: q.index,
         selected_index: answers[q.index]!,
       }));
-      const res = await submitAnswers(quiz.id, payload);
+      // question_order = ordre d'affichage réel (utile après un « Refaire mélangé »).
+      const res = await submitAnswers(quiz.id, payload, displayOrder);
       setResult(res);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch {
@@ -83,14 +118,27 @@ export default function QuizPage() {
                   ? "📚 Tu as les bases, mais des révisions s'imposent."
                   : '⚠️ Il faut reprendre le cours en profondeur.'}
           </p>
-          <Link to="/history" className="btn-secondary mt-4 inline-flex">
-            Retour à l'historique
-          </Link>
+          <div className="mt-4 flex flex-wrap gap-3">
+            <button type="button" onClick={handleRetestShuffled} className="btn-primary">
+              🔀 Refaire mélangé
+            </button>
+            <Link
+              to={`/quiz/${quiz.id}/attempts/${result.attempt_id}`}
+              className="btn-secondary inline-flex"
+            >
+              Revoir cette tentative
+            </Link>
+            <Link to="/history" className="btn-secondary inline-flex">
+              Retour à l'historique
+            </Link>
+          </div>
         </div>
       )}
 
-      {/* Questions */}
-      {quiz.questions.map((q) => {
+      {/* Questions (ordre = displayOrder, mélangé après « Refaire mélangé ») */}
+      {displayOrder.map((qIndex) => {
+        const q = quiz.questions.find((question) => question.index === qIndex);
+        if (!q) return null;
         const userChoice = answers[q.index];
         const detail = result?.details.find((d) => d.index === q.index);
 

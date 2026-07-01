@@ -7,6 +7,7 @@ Endpoints quizz :
 
 import secrets
 
+from django.db import transaction
 from django.db.models import Avg, Count, F, Max
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import OpenApiResponse, extend_schema
@@ -17,8 +18,10 @@ from rest_framework.views import APIView
 
 from accounts.permissions import IsTeacher
 
-from .models import Classroom, Question, Quiz
+from .models import Answer, Attempt, Classroom, Question, Quiz
 from .serializers import (
+    AttemptDetailSerializer,
+    AttemptListSerializer,
     ClassroomCreateSerializer,
     ClassroomSerializer,
     JoinClassSerializer,
@@ -71,6 +74,7 @@ class AnswerQuizView(APIView):
         serializer = SubmitAnswersSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         answers = serializer.validated_data["answers"]
+        question_order = serializer.validated_data.get("question_order")
 
         # Index pour lookup rapide
         questions_by_idx = {q.index: q for q in quiz.questions.all()}
@@ -91,6 +95,9 @@ class AnswerQuizView(APIView):
 
         details = []
         score = 0
+        # [Release 2] On collecte les réponses par question pour créer les Answer
+        # de la tentative sans re-parcourir la liste.
+        answer_rows = []
         for ans in answers:
             q = questions_by_idx[ans["index"]]
             correct = q.correct_index == ans["selected_index"]
@@ -98,7 +105,7 @@ class AnswerQuizView(APIView):
                 score += 1
             # [Lot 6] On mémorise la réponse choisie pour la révision des erreurs.
             q.selected_index = ans["selected_index"]
-            q.save(update_fields=["selected_index"])
+            answer_rows.append((q, ans["selected_index"], correct))
             details.append(
                 {
                     "index": ans["index"],
@@ -108,16 +115,91 @@ class AnswerQuizView(APIView):
                 }
             )
 
-        quiz.score = score
-        quiz.save(update_fields=["score", "updated_at"])
+        # Ordre d'affichage : payload fourni sinon séquence naturelle [1..expected].
+        order = question_order if question_order else list(range(1, expected + 1))
+
+        # [Release 2] Persistance atomique : dernière réponse par question
+        # (compat Lot 6), score du quiz, et nouvelle tentative + réponses.
+        with transaction.atomic():
+            for q, _selected_index, _correct in answer_rows:
+                q.save(update_fields=["selected_index"])
+
+            quiz.score = score
+            quiz.save(update_fields=["score", "updated_at"])
+
+            # N° de tentative = max existant (ce user + ce quiz) + 1.
+            last_number = (
+                Attempt.objects.filter(quiz=quiz, student=request.user).aggregate(m=Max("number"))[
+                    "m"
+                ]
+                or 0
+            )
+            attempt = Attempt.objects.create(
+                quiz=quiz,
+                student=request.user,
+                number=last_number + 1,
+                total=expected,
+                score=score,
+                question_order=order,
+            )
+            Answer.objects.bulk_create(
+                [
+                    Answer(
+                        attempt=attempt,
+                        question=q,
+                        selected_index=selected_index,
+                        is_correct=correct,
+                    )
+                    for q, selected_index, correct in answer_rows
+                ]
+            )
 
         return Response(
             {
                 "score": score,
                 "total": expected,
                 "details": details,
+                "attempt_id": attempt.id,
+                "number": attempt.number,
             }
         )
+
+
+class AttemptListView(generics.ListAPIView):
+    """GET /api/quizzes/<id>/attempts/ — tentatives du user sur ce quiz.
+
+    Scoping STRICT : uniquement les tentatives de request.user, les plus
+    récentes d'abord.
+    """
+
+    serializer_class = AttemptListSerializer
+    permission_classes = [IsAuthenticated]
+    pagination_class = None
+
+    def get_queryset(self):
+        quiz = get_object_or_404(Quiz, pk=self.kwargs["pk"], user=self.request.user)
+        return Attempt.objects.filter(quiz=quiz, student=self.request.user).order_by(
+            "-number", "-created_at"
+        )
+
+    @extend_schema(
+        responses={200: AttemptListSerializer(many=True)},
+        description="Liste des tentatives de l'utilisateur pour ce quiz (récentes d'abord).",
+    )
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)
+
+
+class AttemptDetailView(generics.RetrieveAPIView):
+    """GET /api/quizzes/<id>/attempts/<attempt_id>/ — détail d'une tentative
+    avec ses réponses (pour rejouer). 404 si la tentative n'appartient pas au user."""
+
+    serializer_class = AttemptDetailSerializer
+    permission_classes = [IsAuthenticated]
+    lookup_url_kwarg = "attempt_id"
+
+    def get_queryset(self):
+        return Attempt.objects.filter(quiz_id=self.kwargs["pk"], student=self.request.user)
 
 
 # ---------------------------------------------------------------------------

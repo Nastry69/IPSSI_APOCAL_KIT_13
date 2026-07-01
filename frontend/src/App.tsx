@@ -13,6 +13,7 @@ import ResetPasswordPage from '@/pages/ResetPasswordPage';
 import VerifyEmailPage from '@/pages/VerifyEmailPage';
 import UploadPage from '@/pages/UploadPage';
 import QuizPage from '@/pages/QuizPage';
+import AttemptDetailPage from '@/pages/AttemptDetailPage';
 import HistoryPage from '@/pages/HistoryPage';
 import ProfilePage from '@/pages/ProfilePage';
 import DashboardPage from '@/pages/DashboardPage';
@@ -58,6 +59,14 @@ export default function App() {
                   element={
                     <RequireAuth>
                       <QuizPage />
+                    </RequireAuth>
+                  }
+                />
+                <Route
+                  path="quiz/:id/attempts/:attemptId"
+                  element={
+                    <RequireAuth>
+                      <AttemptDetailPage />
                     </RequireAuth>
                   }
                 />
