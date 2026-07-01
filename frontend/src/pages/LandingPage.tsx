@@ -155,8 +155,8 @@ export default function LandingPage() {
             </div>
             <h3 className="font-semibold text-slate-900 mb-2">Quiz</h3>
             <p className="text-sm">
-              Des questions à choix multiples générées automatiquement pour tester tes
-              connaissances et t'auto-corriger instantanément.
+              Des questions à choix multiples générées automatiquement pour tester tes connaissances
+              et t'auto-corriger instantanément.
             </p>
           </div>
           <div className="card text-center">
@@ -165,8 +165,8 @@ export default function LandingPage() {
             </div>
             <h3 className="font-semibold text-slate-900 mb-2">Fiche de révision</h3>
             <p className="text-sm">
-              Une synthèse structurée des points clés du cours, idéale pour réviser rapidement
-              avant un examen.
+              Une synthèse structurée des points clés du cours, idéale pour réviser rapidement avant
+              un examen.
             </p>
           </div>
           <div className="card text-center">
@@ -220,8 +220,8 @@ export default function LandingPage() {
           Prêt à gagner du temps sur tes révisions ou tes cours ?
         </h2>
         <p className="text-indigo-100 max-w-xl mx-auto mb-6">
-          Rejoins EduTutor IA gratuitement et génère ton premier quiz, fiche ou résumé en moins de
-          5 minutes.
+          Rejoins EduTutor IA gratuitement et génère ton premier quiz, fiche ou résumé en moins de 5
+          minutes.
         </p>
         <div className="flex flex-wrap gap-3 justify-center">
           <Link

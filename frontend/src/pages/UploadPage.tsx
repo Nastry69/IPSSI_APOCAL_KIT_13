@@ -144,7 +144,10 @@ export default function UploadPage() {
         {/* Options de génération (difficulté, nombre de questions, thème ciblé) */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label htmlFor="quiz-difficulty" className="block text-sm font-medium text-slate-700 mb-1">
+            <label
+              htmlFor="quiz-difficulty"
+              className="block text-sm font-medium text-slate-700 mb-1"
+            >
               Difficulté
             </label>
             <select
