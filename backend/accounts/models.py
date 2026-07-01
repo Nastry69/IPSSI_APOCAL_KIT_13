@@ -16,6 +16,10 @@ USERNAME_FIELD = 'email').
 from django.conf import settings
 from django.db import models
 
+# Version courante des CGU / politique de confidentialité. À incrémenter
+# (nouvelle date) quand ces documents changent de façon substantielle.
+CURRENT_CONSENT_VERSION = "2026-07-01"
+
 
 class Profile(models.Model):
     """Informations complémentaires attachées à un utilisateur."""
@@ -29,6 +33,15 @@ class Profile(models.Model):
     # mais un bandeau invite l'utilisateur à cliquer le lien de confirmation.
     email_verified = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    # --- Consentement RGPD (traçabilité du consentement à l'inscription) ---
+    # Date/heure à laquelle l'utilisateur a accepté les CGU et la politique de
+    # confidentialité. NULL pour les comptes créés AVANT l'introduction du
+    # consentement (rétrocompatibilité).
+    consent_accepted_at = models.DateTimeField(null=True, blank=True)
+    # Version des CGU/politique acceptée (permet de re-solliciter le consentement
+    # si les documents changent). Vide pour les comptes historiques.
+    consent_version = models.CharField(max_length=20, blank=True, default="")
 
     def __str__(self) -> str:
         return f"Profile<{self.user.email or self.user.username}>"

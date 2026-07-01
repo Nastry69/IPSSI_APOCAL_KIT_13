@@ -1,7 +1,11 @@
-import { useState, type FormEvent } from 'react';
+import { useState, type ChangeEvent, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { generateQuiz } from '@/api/llm';
 import { getApiErrorMessage } from '@/api/errors';
+
+// Garde-fou taille PDF côté client : aligné sur le backend (pdf_utils rejette > 5 Mo).
+// On évite ainsi un upload inutile (parfois plusieurs Mo) voué à être refusé.
+const MAX_PDF_SIZE = 5 * 1024 * 1024; // 5 Mo
 
 export default function UploadPage() {
   const navigate = useNavigate();
@@ -28,6 +32,23 @@ export default function UploadPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handlePdfChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] ?? null;
+    if (file && file.size > MAX_PDF_SIZE) {
+      // Trop volumineux : on refuse le fichier et on bloque l'upload.
+      setError(
+        'Le PDF dépasse la taille maximale autorisée (5 Mo). Choisissez un fichier plus léger.',
+      );
+      setPdf(null);
+      // On vide l'input pour permettre de re-sélectionner le même fichier après correction.
+      e.target.value = '';
+      return;
+    }
+    // Fichier valide (ou aucun fichier) : on efface une éventuelle erreur de taille précédente.
+    setError(null);
+    setPdf(file);
   };
 
   return (
@@ -97,7 +118,7 @@ export default function UploadPage() {
               type="file"
               accept=".pdf,application/pdf"
               required
-              onChange={(e) => setPdf(e.target.files?.[0] ?? null)}
+              onChange={handlePdfChange}
               className="input"
             />
           )}

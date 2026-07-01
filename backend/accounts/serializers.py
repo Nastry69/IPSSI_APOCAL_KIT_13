@@ -10,9 +10,10 @@ from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password as django_validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.utils import timezone
 from rest_framework import serializers
 
-from .models import get_or_create_profile
+from .models import CURRENT_CONSENT_VERSION, get_or_create_profile
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -47,15 +48,28 @@ class SignupSerializer(serializers.ModelSerializer):
         style={"input_type": "password"},
         help_text="Au moins 8 caractères.",
     )
+    accept_terms = serializers.BooleanField(
+        write_only=True,
+        required=True,
+        help_text="L'utilisateur doit accepter les CGU et la politique de confidentialité.",
+    )
 
     class Meta:
         model = User
-        fields = ["email", "password", "first_name", "last_name"]
+        fields = ["email", "password", "first_name", "last_name", "accept_terms"]
         extra_kwargs = {
             "email": {"required": True, "allow_blank": False},
             "first_name": {"required": False},
             "last_name": {"required": False},
         }
+
+    def validate_accept_terms(self, value: bool) -> bool:
+        if value is not True:
+            raise serializers.ValidationError(
+                "Vous devez accepter les CGU et la politique de confidentialité "
+                "pour créer un compte."
+            )
+        return value
 
     def validate_email(self, value: str) -> str:
         value = value.strip().lower()
@@ -79,11 +93,15 @@ class SignupSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data: dict) -> User:
         password = validated_data.pop("password")
+        validated_data.pop("accept_terms")  # non stocké sur User : on le trace sur le Profile
         email = validated_data["email"]
         user = User(username=email, **validated_data)  # username = email (identifiant)
         user.set_password(password)
         user.save()
-        get_or_create_profile(user)  # profil avec email_verified=False
+        profile = get_or_create_profile(user)  # profil avec email_verified=False
+        profile.consent_accepted_at = timezone.now()
+        profile.consent_version = CURRENT_CONSENT_VERSION
+        profile.save(update_fields=["consent_accepted_at", "consent_version"])
         return user
 
 

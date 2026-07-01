@@ -35,6 +35,8 @@ export async function signup(input: {
   password: string;
   first_name?: string;
   last_name?: string;
+  /** Acceptation des CGU et de la politique de confidentialité (requis par le backend). */
+  accept_terms: boolean;
 }): Promise<User> {
   const { data } = await api.post<User>('/accounts/signup/', input);
   // Auto-login après signup (réutilise email + mot de passe).
@@ -125,4 +127,14 @@ export async function deleteAccount(password: string): Promise<void> {
   // axios : le corps d'une requête DELETE se passe via la clé `data`.
   await api.delete('/accounts/profile/', { data: { password } });
   clearToken();
+}
+
+/**
+ * Demande un export RGPD des données personnelles (droit à la portabilité).
+ * Le backend envoie par email un lien de téléchargement valable 1 h.
+ * Renvoie le message de confirmation (`detail`).
+ */
+export async function requestDataExport(): Promise<string> {
+  const { data } = await api.post<{ detail: string }>('/accounts/export/request/');
+  return data.detail;
 }

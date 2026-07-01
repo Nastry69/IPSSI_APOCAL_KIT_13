@@ -48,7 +48,7 @@ repos:
       - id: prettier
         files: ^frontend/.*\.(ts|tsx|js|jsx|json|css|md)$
         additional_dependencies:
-          - prettier@3.3.3
+          - prettier@3.8.4
 
   # --- Conventional Commits (vérifie le format du message de commit) ---
   - repo: https://github.com/compilerla/conventional-pre-commit

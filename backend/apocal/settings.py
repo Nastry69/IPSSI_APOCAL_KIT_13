@@ -171,6 +171,21 @@ REST_FRAMEWORK = {
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 20,
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+    # Throttling anti-brute-force. ScopedRateThrottle n'agit QUE sur les vues
+    # portant un attribut `throttle_scope` : le reste de l'API n'est pas limité.
+    # Les noms de scope ci-dessous doivent rester IDENTIQUES aux `throttle_scope`
+    # déclarés dans les vues (accounts.views) :
+    #   "login"          -> LoginView (anti-brute-force du login)
+    #   "password_reset" -> PasswordResetRequestView (anti-spam d'emails de reset)
+    #   "export"         -> RequestExportView (limite les demandes d'export RGPD)
+    "DEFAULT_THROTTLE_CLASSES": [
+        "rest_framework.throttling.ScopedRateThrottle",
+    ],
+    "DEFAULT_THROTTLE_RATES": {
+        "login": "10/min",
+        "password_reset": "5/min",
+        "export": "3/hour",
+    },
 }
 
 # ----------------------------------------------------------------------------
