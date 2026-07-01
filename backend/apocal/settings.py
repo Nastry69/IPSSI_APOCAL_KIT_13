@@ -155,6 +155,14 @@ if SECURE_PROD:
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # ----------------------------------------------------------------------------
+# Modèle utilisateur personnalisé
+# ----------------------------------------------------------------------------
+# On étend AbstractUser (accounts.User) pour porter le champ `role`
+# (élève / enseignant). Un modèle User custom DOIT exister avant la 1re migration
+# d'auth : le passage à ce modèle impose de régénérer les migrations + reset base.
+AUTH_USER_MODEL = "accounts.User"
+
+# ----------------------------------------------------------------------------
 # Django REST Framework
 # ----------------------------------------------------------------------------
 REST_FRAMEWORK = {

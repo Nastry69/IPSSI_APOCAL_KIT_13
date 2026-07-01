@@ -12,8 +12,21 @@ class LLMClient(ABC):
     """
 
     @abstractmethod
-    def generate_quiz(self, source_text: str, title: str) -> list[dict]:
-        """Renvoie 10 questions QCM générées à partir du texte source.
+    def generate_quiz(
+        self,
+        source_text: str,
+        title: str,
+        *,
+        num_questions: int = 10,
+        difficulty: str = "medium",
+        theme: str = "",
+    ) -> list[dict]:
+        """Renvoie `num_questions` questions QCM générées à partir du texte source.
+
+        Args:
+            num_questions: nombre de questions attendu (5 à 20).
+            difficulty: niveau demandé ("easy" | "medium" | "hard").
+            theme: thème/chapitre à cibler (optionnel).
 
         Raises:
             LLMError: si le LLM est indisponible, lent, ou renvoie une

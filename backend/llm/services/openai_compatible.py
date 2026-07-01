@@ -48,19 +48,34 @@ class OpenAICompatibleClient(LLMClient):
                 + "Ou utilisez LLM_BACKEND=ollama (gratuit, local) pour le développement."
             )
 
-    def generate_quiz(self, source_text: str, title: str) -> list[dict]:
-        raw = self._call(source_text, title)
-        return parse_and_validate_quiz(raw)
+    def generate_quiz(
+        self,
+        source_text: str,
+        title: str,
+        *,
+        num_questions: int = 10,
+        difficulty: str = "medium",
+        theme: str = "",
+    ) -> list[dict]:
+        user_prompt = build_user_prompt(
+            source_text,
+            title,
+            num_questions=num_questions,
+            difficulty=difficulty,
+            theme=theme,
+        )
+        raw = self._call(user_prompt)
+        return parse_and_validate_quiz(raw, expected_count=num_questions)
 
     # ----- internals -----
 
-    def _call(self, source_text: str, title: str) -> str:
+    def _call(self, user_prompt: str) -> str:
         payload = {
             "model": self.model,
             # Séparation system / user (défense de base contre l'injection, cf. J3).
             "messages": [
                 {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": build_user_prompt(source_text, title)},
+                {"role": "user", "content": user_prompt},
             ],
             "temperature": 0.4,
         }

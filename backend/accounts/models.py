@@ -1,10 +1,11 @@
 """
 Modèles de l'app accounts.
 
-[Note pédagogique] On garde le modèle User standard de Django (simple et
-robuste), et on lui ajoute un Profil 1-pour-1 pour les infos métier qui ne sont
-pas dans User — ici `email_verified` (l'utilisateur a-t-il cliqué le lien de
-confirmation envoyé par email ?).
+[Note pédagogique] On utilise un modèle User PERSONNALISÉ (extension
+d'`AbstractUser`) pour porter le rôle métier (`role` : élève / enseignant)
+directement sur l'utilisateur, et un Profil 1-pour-1 pour les infos annexes —
+ici `email_verified` (lien de confirmation cliqué ?) et la traçabilité du
+consentement RGPD.
 
 Choix d'architecture « email = identifiant » : à l'inscription, on met
 username = email (voir SignupSerializer). Le login se fait donc par email, sans
@@ -14,11 +15,41 @@ USERNAME_FIELD = 'email').
 """
 
 from django.conf import settings
+from django.contrib.auth.models import AbstractUser
 from django.db import models
 
 # Version courante des CGU / politique de confidentialité. À incrémenter
 # (nouvelle date) quand ces documents changent de façon substantielle.
 CURRENT_CONSENT_VERSION = "2026-07-01"
+
+
+class User(AbstractUser):
+    """Utilisateur EduTutor IA — étend le User standard de Django avec un rôle.
+
+    `role` distingue les élèves (qui révisent) des enseignants (qui créent des
+    quiz et suivent leurs classes). Le compte enseignant est « mixte » : le rôle
+    OUVRE des capacités supplémentaires (création, suivi de classe), il ne retire
+    rien — un enseignant peut aussi passer des quiz.
+    """
+
+    class Role(models.TextChoices):
+        STUDENT = "student", "Élève"
+        TEACHER = "teacher", "Enseignant"
+
+    role = models.CharField(
+        max_length=20,
+        choices=Role.choices,
+        default=Role.STUDENT,
+        help_text="Rôle : élève (révise) ou enseignant (crée des quiz et suit sa classe).",
+    )
+
+    @property
+    def is_teacher(self) -> bool:
+        return self.role == self.Role.TEACHER
+
+    @property
+    def is_student(self) -> bool:
+        return self.role == self.Role.STUDENT
 
 
 class Profile(models.Model):

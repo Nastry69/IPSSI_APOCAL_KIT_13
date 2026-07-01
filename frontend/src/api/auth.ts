@@ -20,6 +20,9 @@ export type User = {
   is_staff?: boolean;
 };
 
+/** Rôle choisi à l'inscription (détermine l'expérience élève vs enseignant). */
+export type Role = 'student' | 'teacher';
+
 type LoginResponse = { token: string; user: User };
 
 /** Connexion par email + mot de passe. Stocke le token et renvoie l'utilisateur. */
@@ -37,6 +40,8 @@ export async function signup(input: {
   last_name?: string;
   /** Acceptation des CGU et de la politique de confidentialité (requis par le backend). */
   accept_terms: boolean;
+  /** Rôle choisi à l'inscription. Défaut backend : "student". */
+  role: Role;
 }): Promise<User> {
   const { data } = await api.post<User>('/accounts/signup/', input);
   // Auto-login après signup (réutilise email + mot de passe).

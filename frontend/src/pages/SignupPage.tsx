@@ -1,9 +1,25 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { signup } from '@/api/auth';
+import { signup, type Role } from '@/api/auth';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSiteConfig } from '@/contexts/SiteConfigContext';
 import { getApiErrorMessage } from '@/api/errors';
+
+/** Options du sélecteur de rôle affiché à l'inscription. */
+const ROLE_OPTIONS: Array<{ value: Role; label: string; icon: string; helper: string }> = [
+  {
+    value: 'student',
+    label: 'Élève',
+    icon: '🎓',
+    helper: 'Je révise : quiz, fiches et suivi de mes scores.',
+  },
+  {
+    value: 'teacher',
+    label: 'Enseignant',
+    icon: '🧑‍🏫',
+    helper: 'Je crée des quiz et je suis ma classe.',
+  },
+];
 
 export default function SignupPage() {
   const { refresh } = useAuth();
@@ -14,6 +30,7 @@ export default function SignupPage() {
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [password, setPassword] = useState('');
+  const [role, setRole] = useState<Role>('student');
   const [acceptTerms, setAcceptTerms] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -29,6 +46,7 @@ export default function SignupPage() {
         first_name: firstName || undefined,
         last_name: lastName || undefined,
         accept_terms: acceptTerms,
+        role,
       });
       await refresh();
       // Un bandeau (dans le Layout) invitera ensuite à confirmer l'email.
@@ -131,6 +149,47 @@ export default function SignupPage() {
               className="input"
             />
           </div>
+
+          <fieldset>
+            <legend className="block text-sm font-medium text-slate-700 mb-2">
+              Je m'inscris en tant que
+            </legend>
+            <div className="grid grid-cols-2 gap-3">
+              {ROLE_OPTIONS.map((option) => {
+                const inputId = `role-${option.value}`;
+                const checked = role === option.value;
+                return (
+                  <label
+                    key={option.value}
+                    htmlFor={inputId}
+                    className={`relative flex cursor-pointer flex-col gap-1 rounded-lg border p-3 text-sm transition
+                      focus-within:ring-2 focus-within:ring-indigo-500 focus-within:ring-offset-2
+                      dark:focus-within:ring-offset-slate-900
+                      ${
+                        checked
+                          ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-950 dark:border-indigo-400'
+                          : 'border-slate-300 bg-white hover:bg-slate-50 dark:bg-slate-800 dark:border-slate-600 dark:hover:bg-slate-700'
+                      }`}
+                  >
+                    <input
+                      type="radio"
+                      id={inputId}
+                      name="role"
+                      value={option.value}
+                      checked={checked}
+                      onChange={() => setRole(option.value)}
+                      className="absolute top-3 right-3 h-4 w-4 accent-indigo-600 focus:outline-none"
+                    />
+                    <span className="text-xl" aria-hidden="true">
+                      {option.icon}
+                    </span>
+                    <span className="font-semibold text-slate-900 pr-6">{option.label}</span>
+                    <span className="text-xs text-slate-500">{option.helper}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </fieldset>
 
           <label className="flex items-start gap-2 text-sm text-slate-700">
             <input

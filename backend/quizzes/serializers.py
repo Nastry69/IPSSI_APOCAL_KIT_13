@@ -47,21 +47,23 @@ class QuizSummarySerializer(serializers.ModelSerializer):
 class AnswerItemSerializer(serializers.Serializer):
     """Une réponse fournie par l'utilisateur."""
 
-    index = serializers.IntegerField(min_value=1, max_value=10)
+    index = serializers.IntegerField(min_value=1, max_value=20)
     selected_index = serializers.IntegerField(min_value=0, max_value=3)
 
 
 class SubmitAnswersSerializer(serializers.Serializer):
-    """POST /api/quizzes/<id>/answer/ — 10 réponses attendues."""
+    """POST /api/quizzes/<id>/answer/ — le nombre de réponses doit correspondre
+    au nombre de questions du quiz (contrôle final dans la vue, qui connaît le
+    quiz ; ici on vérifie seulement l'absence de doublon d'index)."""
 
     answers = AnswerItemSerializer(many=True)
 
     def validate_answers(self, value):
-        if len(value) != 10:
-            raise serializers.ValidationError(f"10 réponses attendues, {len(value)} reçues.")
-        indices = sorted(a["index"] for a in value)
-        if indices != list(range(1, 11)):
-            raise serializers.ValidationError("Les indices doivent couvrir 1..10 sans doublon.")
+        if not value:
+            raise serializers.ValidationError("Aucune réponse fournie.")
+        indices = [a["index"] for a in value]
+        if len(set(indices)) != len(indices):
+            raise serializers.ValidationError("Les indices de réponses ne doivent pas se répéter.")
         return value
 
 

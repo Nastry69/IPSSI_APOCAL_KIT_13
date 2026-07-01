@@ -14,9 +14,9 @@ Endpoints d'authentification (Lot 3 : email-identifiant + validation + reset).
 import json
 import logging
 
+from django.contrib.auth import get_user_model
 from django.contrib.auth import login as django_login
 from django.contrib.auth import logout as django_logout
-from django.contrib.auth.models import User
 from django.http import HttpResponse
 from django.urls import reverse
 from drf_spectacular.utils import OpenApiResponse, extend_schema
@@ -51,6 +51,8 @@ from .tokens import (
     read_export_token,
     read_password_reset_tokens,
 )
+
+User = get_user_model()
 
 logger = logging.getLogger(__name__)
 

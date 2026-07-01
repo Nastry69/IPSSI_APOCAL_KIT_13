@@ -74,10 +74,19 @@ class AnswerQuizView(APIView):
 
         # Index pour lookup rapide
         questions_by_idx = {q.index: q for q in quiz.questions.all()}
-        if len(questions_by_idx) != 10:
+        expected = len(questions_by_idx)
+        if expected == 0:
             return Response(
-                {"detail": "Ce quiz n'a pas 10 questions — état incohérent."},
+                {"detail": "Ce quiz n'a aucune question — état incohérent."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        # Le nombre de réponses doit couvrir exactement les questions 1..expected.
+        submitted = sorted(a["index"] for a in answers)
+        if submitted != list(range(1, expected + 1)):
+            return Response(
+                {"detail": f"{expected} réponses attendues, couvrant les questions 1..{expected}."},
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
         details = []
@@ -105,7 +114,7 @@ class AnswerQuizView(APIView):
         return Response(
             {
                 "score": score,
-                "total": 10,
+                "total": expected,
                 "details": details,
             }
         )

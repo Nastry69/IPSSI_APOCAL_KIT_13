@@ -6,14 +6,15 @@ QUE l'email + le mot de passe ; en interne, username = email. Le login se fait
 donc par email. On gère explicitement les doublons d'email avec un message clair.
 """
 
-from django.contrib.auth import authenticate
-from django.contrib.auth.models import User
+from django.contrib.auth import authenticate, get_user_model
 from django.contrib.auth.password_validation import validate_password as django_validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils import timezone
 from rest_framework import serializers
 
 from .models import CURRENT_CONSENT_VERSION, get_or_create_profile
+
+User = get_user_model()
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -32,6 +33,7 @@ class UserSerializer(serializers.ModelSerializer):
             "date_joined",
             "email_verified",
             "is_staff",
+            "role",
         ]
         read_only_fields = fields
 
@@ -56,11 +58,12 @@ class SignupSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ["email", "password", "first_name", "last_name", "accept_terms"]
+        fields = ["email", "password", "first_name", "last_name", "role", "accept_terms"]
         extra_kwargs = {
             "email": {"required": True, "allow_blank": False},
             "first_name": {"required": False},
             "last_name": {"required": False},
+            "role": {"required": False},
         }
 
     def validate_accept_terms(self, value: bool) -> bool:

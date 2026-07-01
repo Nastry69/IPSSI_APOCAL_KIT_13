@@ -5,9 +5,11 @@ Lancez : pytest accounts/
 """
 
 import pytest
-from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model
 from django.test import override_settings
 from rest_framework.test import APIClient
+
+User = get_user_model()
 
 pytestmark = pytest.mark.django_db
 

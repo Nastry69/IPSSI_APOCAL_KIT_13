@@ -1,10 +1,12 @@
 """Tests pour l'app quizzes — K1 (list/detail) + K2 (answer)."""
 
 import pytest
-from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
 
 from .models import Question, Quiz
+
+User = get_user_model()
 
 pytestmark = pytest.mark.django_db
 

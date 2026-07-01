@@ -40,13 +40,28 @@ class GeminiLLMClient(LLMClient):
                 "(gratuit, local) pour le développement."
             )
 
-    def generate_quiz(self, source_text: str, title: str) -> list[dict]:
-        raw = self._call_gemini(source_text, title)
-        return parse_and_validate_quiz(raw)
+    def generate_quiz(
+        self,
+        source_text: str,
+        title: str,
+        *,
+        num_questions: int = 10,
+        difficulty: str = "medium",
+        theme: str = "",
+    ) -> list[dict]:
+        user_prompt = build_user_prompt(
+            source_text,
+            title,
+            num_questions=num_questions,
+            difficulty=difficulty,
+            theme=theme,
+        )
+        raw = self._call_gemini(user_prompt)
+        return parse_and_validate_quiz(raw, expected_count=num_questions)
 
     # ----- internals -----
 
-    def _call_gemini(self, source_text: str, title: str) -> str:
+    def _call_gemini(self, user_prompt: str) -> str:
         url = GEMINI_URL_TEMPLATE.format(model=self.model)
         try:
             response = requests.post(
@@ -59,7 +74,7 @@ class GeminiLLMClient(LLMClient):
                 json={
                     # Consignes système isolées du contenu utilisateur.
                     "system_instruction": {"parts": [{"text": SYSTEM_PROMPT}]},
-                    "contents": [{"parts": [{"text": build_user_prompt(source_text, title)}]}],
+                    "contents": [{"parts": [{"text": user_prompt}]}],
                     "generationConfig": {
                         "temperature": 0.4,
                         # Force une sortie JSON stricte (équivalent du JSON mode).

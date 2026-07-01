@@ -37,13 +37,28 @@ class AnthropicLLMClient(LLMClient):
                 "LLM_BACKEND=ollama (gratuit, local) pour le développement."
             )
 
-    def generate_quiz(self, source_text: str, title: str) -> list[dict]:
-        raw = self._call_anthropic(source_text, title)
-        return parse_and_validate_quiz(raw)
+    def generate_quiz(
+        self,
+        source_text: str,
+        title: str,
+        *,
+        num_questions: int = 10,
+        difficulty: str = "medium",
+        theme: str = "",
+    ) -> list[dict]:
+        user_prompt = build_user_prompt(
+            source_text,
+            title,
+            num_questions=num_questions,
+            difficulty=difficulty,
+            theme=theme,
+        )
+        raw = self._call_anthropic(user_prompt)
+        return parse_and_validate_quiz(raw, expected_count=num_questions)
 
     # ----- internals -----
 
-    def _call_anthropic(self, source_text: str, title: str) -> str:
+    def _call_anthropic(self, user_prompt: str) -> str:
         try:
             response = requests.post(
                 ANTHROPIC_URL,
@@ -57,7 +72,7 @@ class AnthropicLLMClient(LLMClient):
                     "max_tokens": 4096,  # obligatoire chez Anthropic ; large pour 10 QCM
                     "system": SYSTEM_PROMPT,  # consignes isolées du contenu utilisateur
                     "messages": [
-                        {"role": "user", "content": build_user_prompt(source_text, title)},
+                        {"role": "user", "content": user_prompt},
                     ],
                     "temperature": 0.4,
                 },

@@ -12,7 +12,12 @@ import requests
 from django.conf import settings
 
 from .base import LLMClient, LLMError
-from .quiz_prompt import QUIZ_JSON_SCHEMA, build_full_prompt, parse_and_validate_quiz
+from .quiz_prompt import (
+    QUIZ_JSON_SCHEMA,
+    SYSTEM_PROMPT,
+    build_user_prompt,
+    parse_and_validate_quiz,
+)
 
 
 class OllamaLLMClient(LLMClient):
@@ -28,21 +33,39 @@ class OllamaLLMClient(LLMClient):
         # 8B sur CPU peut dépasser largement 120 s (cf. perturbation J2 latence).
         self.timeout = timeout or settings.OLLAMA_TIMEOUT
 
-    def generate_quiz(self, source_text: str, title: str) -> list[dict]:
-        # Ollama /api/generate attend UN prompt unique (pas de séparation
-        # system/user) : on concatène donc system + cours via build_full_prompt.
-        prompt = build_full_prompt(source_text, title)
-        raw = self._call_ollama(prompt)
-        return parse_and_validate_quiz(raw)
+    def generate_quiz(
+        self,
+        source_text: str,
+        title: str,
+        *,
+        num_questions: int = 10,
+        difficulty: str = "medium",
+        theme: str = "",
+    ) -> list[dict]:
+        # Séparation system / user : /api/generate accepte un champ `system`
+        # DISTINCT du `prompt` (contenu utilisateur). On isole ainsi les consignes
+        # du contenu du cours — défense de base contre l'injection (J3).
+        raw = self._call_ollama(
+            system=SYSTEM_PROMPT,
+            prompt=build_user_prompt(
+                source_text,
+                title,
+                num_questions=num_questions,
+                difficulty=difficulty,
+                theme=theme,
+            ),
+        )
+        return parse_and_validate_quiz(raw, expected_count=num_questions)
 
     # ----- internals -----
 
-    def _call_ollama(self, prompt: str) -> str:
+    def _call_ollama(self, system: str, prompt: str) -> str:
         try:
             response = requests.post(
                 f"{self.host}/api/generate",
                 json={
                     "model": self.model,
+                    "system": system,
                     "prompt": prompt,
                     "stream": False,
                     "options": {"temperature": 0.4},  # peu de créativité : on veut du factuel

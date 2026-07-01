@@ -20,6 +20,7 @@ from .pdf_utils import PDFError, extract_text_from_pdf
 from .serializers import GenerateQuizSerializer
 from .services import get_llm_client
 from .services.base import LLMError
+from .services.quiz_prompt import QuizValidationError
 
 
 class PingView(APIView):
@@ -92,6 +93,12 @@ class PingView(APIView):
             )
 
 
+# Nombre de tentatives de génération si la sortie LLM est structurellement
+# invalide (défense J3 : valider → rejeter → retenter). On NE retente PAS les
+# erreurs d'indisponibilité (réseau).
+MAX_GENERATION_ATTEMPTS = 2
+
+
 class GenerateQuizView(APIView):
     """Génère un quiz de 10 QCM à partir d'un PDF ou d'un texte collé."""
 
@@ -126,6 +133,9 @@ class GenerateQuizView(APIView):
         title = serializer.validated_data["title"]
         pdf_file = serializer.validated_data.get("pdf")
         source_text = (serializer.validated_data.get("source_text") or "").strip()
+        difficulty = serializer.validated_data.get("difficulty", "medium")
+        num_questions = serializer.validated_data.get("num_questions", 10)
+        theme = serializer.validated_data.get("theme", "") or ""
 
         # 1. Extraction du texte source
         if pdf_file:
@@ -134,12 +144,37 @@ class GenerateQuizView(APIView):
             except PDFError as exc:
                 return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
-        # 2. Appel LLM (Ollama ou Mock)
-        try:
-            questions_data = get_llm_client().generate_quiz(source_text=source_text, title=title)
-        except LLMError as exc:
+        # 2. Appel LLM (Ollama ou Mock) avec RE-TENTATIVE si la sortie est
+        # structurellement invalide (défense J3 : « valider, rejeter, retenter »).
+        questions_data = None
+        last_error: QuizValidationError | None = None
+        for _attempt in range(MAX_GENERATION_ATTEMPTS):
+            try:
+                questions_data = get_llm_client().generate_quiz(
+                    source_text=source_text,
+                    title=title,
+                    num_questions=num_questions,
+                    difficulty=difficulty,
+                    theme=theme,
+                )
+                break
+            except QuizValidationError as exc:
+                last_error = exc  # sortie non conforme : on retente
+                continue
+            except LLMError as exc:
+                # Indisponibilité (réseau) : inutile de retenter.
+                return Response(
+                    {"detail": f"Échec génération LLM : {exc}"},
+                    status=status.HTTP_502_BAD_GATEWAY,
+                )
+        if questions_data is None:
             return Response(
-                {"detail": f"Échec génération LLM : {exc}"},
+                {
+                    "detail": (
+                        f"Sortie LLM invalide après {MAX_GENERATION_ATTEMPTS} tentatives : "
+                        f"{last_error}"
+                    )
+                },
                 status=status.HTTP_502_BAD_GATEWAY,
             )
 
@@ -151,6 +186,9 @@ class GenerateQuizView(APIView):
                 user=request.user,
                 title=title,
                 source_text=source_text,
+                difficulty=difficulty,
+                num_questions=num_questions,
+                theme=theme,
             )
             for i, q in enumerate(questions_data, start=1):
                 Question.objects.create(

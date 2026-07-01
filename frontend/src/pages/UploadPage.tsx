@@ -1,11 +1,14 @@
 import { useState, type ChangeEvent, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { generateQuiz } from '@/api/llm';
+import { generateQuiz, type QuizDifficulty } from '@/api/llm';
 import { getApiErrorMessage } from '@/api/errors';
 
 // Garde-fou taille PDF côté client : aligné sur le backend (pdf_utils rejette > 5 Mo).
 // On évite ainsi un upload inutile (parfois plusieurs Mo) voué à être refusé.
 const MAX_PDF_SIZE = 5 * 1024 * 1024; // 5 Mo
+
+// Options du sélecteur de nombre de questions (bornes backend : 5 à 20).
+const NUM_QUESTIONS_OPTIONS = [5, 10, 15, 20] as const;
 
 export default function UploadPage() {
   const navigate = useNavigate();
@@ -13,6 +16,9 @@ export default function UploadPage() {
   const [mode, setMode] = useState<'pdf' | 'text'>('text');
   const [pdf, setPdf] = useState<File | null>(null);
   const [sourceText, setSourceText] = useState('');
+  const [difficulty, setDifficulty] = useState<QuizDifficulty>('medium');
+  const [numQuestions, setNumQuestions] = useState(10);
+  const [theme, setTheme] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -25,6 +31,9 @@ export default function UploadPage() {
         title,
         pdf: mode === 'pdf' ? (pdf ?? undefined) : undefined,
         source_text: mode === 'text' ? sourceText : undefined,
+        difficulty,
+        num_questions: numQuestions,
+        theme: theme.trim() ? theme.trim() : undefined,
       });
       navigate(`/quiz/${quiz.id}`);
     } catch (err) {
@@ -55,7 +64,7 @@ export default function UploadPage() {
     <div className="max-w-2xl mx-auto">
       <h1 className="text-3xl font-bold text-slate-900 mb-2">Créer un nouveau quiz</h1>
       <p className="text-slate-600 mb-6">
-        Uploade un PDF ou colle un texte. EduTutor IA génère 10 questions QCM.
+        Uploade un PDF ou colle un texte. EduTutor IA génère un quiz QCM personnalisé.
       </p>
 
       {error && (
@@ -66,8 +75,11 @@ export default function UploadPage() {
 
       <form onSubmit={handleSubmit} className="card space-y-4">
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Titre du cours</label>
+          <label htmlFor="quiz-title" className="block text-sm font-medium text-slate-700 mb-1">
+            Titre du cours
+          </label>
           <input
+            id="quiz-title"
             type="text"
             required
             value={title}
@@ -127,6 +139,60 @@ export default function UploadPage() {
               {sourceText.length} / 200 caractères minimum
             </p>
           )}
+        </div>
+
+        {/* Options de génération (difficulté, nombre de questions, thème ciblé) */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label htmlFor="quiz-difficulty" className="block text-sm font-medium text-slate-700 mb-1">
+              Difficulté
+            </label>
+            <select
+              id="quiz-difficulty"
+              value={difficulty}
+              onChange={(e) => setDifficulty(e.target.value as QuizDifficulty)}
+              className="input"
+            >
+              <option value="easy">Facile</option>
+              <option value="medium">Moyen</option>
+              <option value="hard">Difficile</option>
+            </select>
+          </div>
+
+          <div>
+            <label
+              htmlFor="quiz-num-questions"
+              className="block text-sm font-medium text-slate-700 mb-1"
+            >
+              Nombre de questions
+            </label>
+            <select
+              id="quiz-num-questions"
+              value={numQuestions}
+              onChange={(e) => setNumQuestions(Number(e.target.value))}
+              className="input"
+            >
+              {NUM_QUESTIONS_OPTIONS.map((n) => (
+                <option key={n} value={n}>
+                  {n} questions
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label htmlFor="quiz-theme" className="block text-sm font-medium text-slate-700 mb-1">
+            Thème / chapitre ciblé <span className="text-slate-400 font-normal">(optionnel)</span>
+          </label>
+          <input
+            id="quiz-theme"
+            type="text"
+            value={theme}
+            onChange={(e) => setTheme(e.target.value)}
+            placeholder="Ex. : la Guerre froide"
+            className="input"
+          />
         </div>
 
         <button type="submit" disabled={loading} className="btn-primary w-full">

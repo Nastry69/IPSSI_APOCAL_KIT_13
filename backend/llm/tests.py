@@ -11,7 +11,7 @@ import io
 import json
 
 import pytest
-from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
 from pypdf import PdfReader, PdfWriter
@@ -28,6 +28,8 @@ from .pdf_utils import MAX_PDF_SIZE_BYTES, PDFError, extract_text_from_pdf
 from .serializers import GenerateQuizSerializer
 from .services.base import LLMError
 from .services.quiz_prompt import parse_and_validate_quiz
+
+User = get_user_model()
 
 pytestmark = pytest.mark.django_db
 
