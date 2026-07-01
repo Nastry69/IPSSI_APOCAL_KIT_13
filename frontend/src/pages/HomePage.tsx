@@ -1,9 +1,16 @@
 import { Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import LandingPage from '@/pages/LandingPage';
 
 export default function HomePage() {
   const { user } = useAuth();
 
+  // Visiteur non connecté : landing page marketing (accroche + CTA inscription).
+  if (!user) {
+    return <LandingPage />;
+  }
+
+  // Utilisateur connecté : vue app existante (raccourcis + rappel du kit).
   return (
     <div className="space-y-8">
       <section className="text-center py-12">
@@ -19,25 +26,12 @@ export default function HomePage() {
         </p>
 
         <div className="mt-8 flex flex-wrap gap-3 justify-center">
-          {user ? (
-            <>
-              <Link to="/upload" className="btn-primary px-6 py-3 text-base">
-                Créer un quiz
-              </Link>
-              <Link to="/history" className="btn-secondary px-6 py-3 text-base">
-                Voir mon historique
-              </Link>
-            </>
-          ) : (
-            <>
-              <Link to="/signup" className="btn-primary px-6 py-3 text-base">
-                Commencer gratuitement
-              </Link>
-              <Link to="/login" className="btn-secondary px-6 py-3 text-base">
-                Se connecter
-              </Link>
-            </>
-          )}
+          <Link to="/upload" className="btn-primary px-6 py-3 text-base">
+            Créer un quiz
+          </Link>
+          <Link to="/history" className="btn-secondary px-6 py-3 text-base">
+            Voir mon historique
+          </Link>
         </div>
       </section>
 

@@ -26,6 +26,7 @@ urlpatterns = [
     path("api/accounts/", include("accounts.urls")),
     path("api/llm/", include("llm.urls")),
     path("api/quizzes/", include("quizzes.urls")),
+    path("api/classes/", include("quizzes.class_urls")),
     # API — administration (config site/LLM, users, opérations base)
     path("api/admin/", include("administration.urls")),
     path("api/site-config/", PublicSiteConfigView.as_view(), name="public-site-config"),

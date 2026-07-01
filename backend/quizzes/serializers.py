@@ -2,7 +2,7 @@
 
 from rest_framework import serializers
 
-from .models import Question, Quiz
+from .models import Classroom, Question, Quiz
 
 
 class QuestionSerializer(serializers.ModelSerializer):
@@ -63,3 +63,43 @@ class SubmitAnswersSerializer(serializers.Serializer):
         if indices != list(range(1, 11)):
             raise serializers.ValidationError("Les indices doivent couvrir 1..10 sans doublon.")
         return value
+
+
+# ---------------------------------------------------------------------------
+# Classes (Classroom) — liaison enseignant / élèves via code d'invitation
+# ---------------------------------------------------------------------------
+
+
+class ClassroomSerializer(serializers.ModelSerializer):
+    """Vue d'une classe (lecture)."""
+
+    student_count = serializers.SerializerMethodField()
+    teacher_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Classroom
+        fields = ["id", "name", "code", "student_count", "teacher_name", "created_at"]
+        read_only_fields = fields
+
+    def get_student_count(self, obj: Classroom) -> int:
+        return obj.students.count()
+
+    def get_teacher_name(self, obj: Classroom) -> str:
+        return obj.teacher.get_full_name() or obj.teacher.username
+
+
+class ClassroomCreateSerializer(serializers.ModelSerializer):
+    """Création d'une classe : seul le nom est fourni (le code est généré)."""
+
+    class Meta:
+        model = Classroom
+        fields = ["name"]
+
+
+class JoinClassSerializer(serializers.Serializer):
+    """Adhésion à une classe via son code d'invitation."""
+
+    code = serializers.CharField(max_length=12)
+
+    def validate_code(self, value: str) -> str:
+        return value.strip().upper()

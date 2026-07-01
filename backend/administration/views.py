@@ -18,7 +18,7 @@ Endpoints d'administration (Lot 8). Tous réservés aux comptes staff
 
 import logging
 
-from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model
 from django.core.management import call_command
 from django.db.models import Avg, Q
 from django.shortcuts import get_object_or_404
@@ -42,6 +42,8 @@ from .serializers import (
     SiteConfigPublicSerializer,
     SiteConfigSerializer,
 )
+
+User = get_user_model()
 
 logger = logging.getLogger(__name__)
 

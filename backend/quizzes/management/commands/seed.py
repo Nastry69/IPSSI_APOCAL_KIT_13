@@ -9,10 +9,12 @@ Identifiants après seed :
     Password : motdepasse123
 """
 
-from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
 
 from quizzes.models import Question, Quiz
+
+User = get_user_model()
 
 
 class Command(BaseCommand):

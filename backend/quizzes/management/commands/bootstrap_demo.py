@@ -19,12 +19,14 @@ fichier `demo_quizzes.json` situé à côté de cette commande.
 import json
 from pathlib import Path
 
-from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
 from accounts.models import get_or_create_profile
 from quizzes.models import Question, Quiz
+
+User = get_user_model()
 
 QUIZ_DATA_FILE = Path(__file__).resolve().parent / "demo_quizzes.json"
 # Comptes étudiants/enseignante SCÉNARISÉS (Léa en révision, Kevin qui bloque en

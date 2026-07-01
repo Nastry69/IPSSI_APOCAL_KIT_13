@@ -1,11 +1,13 @@
 """Sérialiseurs de l'app administration (Lot 8)."""
 
-from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
 from accounts.models import get_or_create_profile
 
 from .models import SiteConfig
+
+User = get_user_model()
 
 
 class SiteConfigSerializer(serializers.ModelSerializer):
@@ -49,6 +51,7 @@ class AdminUserSerializer(serializers.ModelSerializer):
             "is_active",
             "is_staff",
             "is_superuser",
+            "role",
             "email_verified",
             "quiz_count",
         ]

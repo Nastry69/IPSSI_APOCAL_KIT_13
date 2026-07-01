@@ -5,6 +5,8 @@ Endpoints quizz :
     POST  /api/quizzes/<id>/answer/    — soumet 10 réponses, renvoie le score
 """
 
+import secrets
+
 from django.db.models import Avg, Count, F, Max
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import OpenApiResponse, extend_schema
@@ -13,8 +15,13 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import Question, Quiz
+from accounts.permissions import IsTeacher
+
+from .models import Classroom, Question, Quiz
 from .serializers import (
+    ClassroomCreateSerializer,
+    ClassroomSerializer,
+    JoinClassSerializer,
     QuizSerializer,
     QuizSummarySerializer,
     SubmitAnswersSerializer,
@@ -189,3 +196,96 @@ class MistakesView(APIView):
             for q in wrong
         ]
         return Response({"count": len(items), "mistakes": items})
+
+
+# ---------------------------------------------------------------------------
+# Classes (Classroom) — création par l'enseignant, adhésion par code
+# ---------------------------------------------------------------------------
+
+# Alphabet sans caractères ambigus (ni I, L, O, 0, 1) pour un code lisible.
+_CLASS_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+
+
+def _unique_class_code(length: int = 6) -> str:
+    """Génère un code de classe unique, lisible et non ambigu."""
+    for _ in range(20):
+        code = "".join(secrets.choice(_CLASS_CODE_ALPHABET) for _ in range(length))
+        if not Classroom.objects.filter(code=code).exists():
+            return code
+    # Repli extrêmement improbable : on allonge le code pour garantir l'unicité.
+    return "".join(secrets.choice(_CLASS_CODE_ALPHABET) for _ in range(length + 4))
+
+
+class ClassesView(APIView):
+    """GET : les classes du caller (selon son rôle). POST : création (enseignant)."""
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        responses={200: OpenApiResponse(description="Liste des classes du caller")},
+        description="Enseignant : ses classes ; élève : les classes rejointes.",
+    )
+    def get(self, request):
+        user = request.user
+        if getattr(user, "is_teacher", False):
+            qs = Classroom.objects.filter(teacher=user)
+        else:
+            qs = user.classes_joined.all()
+        return Response(ClassroomSerializer(qs, many=True).data)
+
+    @extend_schema(request=ClassroomCreateSerializer, responses={201: ClassroomSerializer})
+    def post(self, request):
+        if not getattr(request.user, "is_teacher", False):
+            return Response(
+                {"detail": "Seuls les enseignants peuvent créer une classe."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        serializer = ClassroomCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        classroom = Classroom.objects.create(
+            teacher=request.user,
+            name=serializer.validated_data["name"],
+            code=_unique_class_code(),
+        )
+        return Response(ClassroomSerializer(classroom).data, status=status.HTTP_201_CREATED)
+
+
+class JoinClassView(APIView):
+    """POST { code } : l'utilisateur rejoint la classe correspondante."""
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(request=JoinClassSerializer, responses={200: ClassroomSerializer})
+    def post(self, request):
+        serializer = JoinClassSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        code = serializer.validated_data["code"]
+        try:
+            classroom = Classroom.objects.get(code=code)
+        except Classroom.DoesNotExist:
+            return Response(
+                {"detail": "Code de classe invalide."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        classroom.students.add(request.user)
+        return Response(ClassroomSerializer(classroom).data)
+
+
+class ClassroomDetailView(APIView):
+    """GET : détail d'une classe + liste des élèves (enseignant propriétaire)."""
+
+    permission_classes = [IsAuthenticated, IsTeacher]
+
+    @extend_schema(responses={200: OpenApiResponse(description="Classe + élèves")})
+    def get(self, request, pk: int):
+        classroom = get_object_or_404(Classroom, pk=pk, teacher=request.user)
+        data = ClassroomSerializer(classroom).data
+        data["students"] = [
+            {
+                "id": s.id,
+                "name": s.get_full_name() or s.username,
+                "email": s.email,
+            }
+            for s in classroom.students.all()
+        ]
+        return Response(data)
