@@ -8,6 +8,9 @@
  */
 import { api, setToken, clearToken } from './client';
 
+/** Rôle choisi à l'inscription (détermine l'expérience élève vs enseignant). */
+export type Role = 'student' | 'teacher';
+
 export type User = {
   id: number;
   username: string;
@@ -18,10 +21,9 @@ export type User = {
   email_verified?: boolean;
   /** Compte administrateur (accès à la page /admin) ? */
   is_staff?: boolean;
+  /** Rôle de l'utilisateur (élève ou enseignant). */
+  role?: Role;
 };
-
-/** Rôle choisi à l'inscription (détermine l'expérience élève vs enseignant). */
-export type Role = 'student' | 'teacher';
 
 type LoginResponse = { token: string; user: User };
 

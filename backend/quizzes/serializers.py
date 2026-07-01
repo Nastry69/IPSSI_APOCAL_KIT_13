@@ -1,8 +1,11 @@
 """Sérialiseurs pour Quiz et Question."""
 
+from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
 from .models import Answer, Attempt, Classroom, Question, Quiz
+
+User = get_user_model()
 
 
 class QuestionSerializer(serializers.ModelSerializer):
@@ -166,3 +169,34 @@ class JoinClassSerializer(serializers.Serializer):
 
     def validate_code(self, value: str) -> str:
         return value.strip().upper()
+
+
+# ---------------------------------------------------------------------------
+# Release 2 — Espace prof : suivi de la progression des élèves d'une classe
+# ---------------------------------------------------------------------------
+
+
+class StudentIdentitySerializer(serializers.ModelSerializer):
+    """Identité minimale d'un élève exposée à son enseignant (pas d'email/rôle)."""
+
+    class Meta:
+        model = User
+        fields = ["id", "first_name", "last_name", "username"]
+        read_only_fields = fields
+
+
+class ClassProgressStudentSerializer(serializers.Serializer):
+    """Progression d'UN élève de la classe, agrégée sur toutes ses tentatives.
+
+    Structure calculée dans la vue (`ClassProgressView`) à partir des `Attempt`
+    de l'élève : KPIs (nombre de quiz passés, moyenne, meilleur / dernier score)
+    et `evolution` (une entrée par tentative, triée chronologiquement, tous
+    quizzes confondus) pour tracer le graphe d'évolution côté frontend.
+    """
+
+    student = StudentIdentitySerializer(read_only=True)
+    quizzes_taken = serializers.IntegerField(read_only=True)
+    average_score = serializers.FloatField(read_only=True, allow_null=True)
+    best_score = serializers.IntegerField(read_only=True, allow_null=True)
+    last_score = serializers.IntegerField(read_only=True, allow_null=True)
+    evolution = serializers.ListField(child=serializers.DictField(), read_only=True)
