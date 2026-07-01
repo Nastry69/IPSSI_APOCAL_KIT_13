@@ -20,6 +20,9 @@ from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 EMAIL_VERIFY_SALT = "accounts.email-verification"
 EMAIL_VERIFY_MAX_AGE = 60 * 60 * 24 * 3  # 3 jours en secondes
 
+EXPORT_SALT = "accounts.data-export"
+EXPORT_MAX_AGE = 60 * 60  # 1 heure en secondes
+
 
 # --- Validation d'email (token signé, sans stockage en base) ---
 
@@ -33,6 +36,23 @@ def read_email_verify_token(token: str) -> int | None:
     """Renvoie l'id utilisateur si le token est valide et non expiré, sinon None."""
     try:
         data = signing.loads(token, salt=EMAIL_VERIFY_SALT, max_age=EMAIL_VERIFY_MAX_AGE)
+        return data.get("uid")
+    except signing.BadSignature:
+        return None
+
+
+# --- Export RGPD (token signé temporel, sans stockage en base) ---
+
+
+def make_export_token(user) -> str:
+    """Crée un token signé (valable 1 h) autorisant le téléchargement de l'export de `user`."""
+    return signing.dumps({"uid": user.pk}, salt=EXPORT_SALT)
+
+
+def read_export_token(token: str) -> int | None:
+    """Renvoie l'id utilisateur si le token d'export est valide et non expiré, sinon None."""
+    try:
+        data = signing.loads(token, salt=EXPORT_SALT, max_age=EXPORT_MAX_AGE)
         return data.get("uid")
     except signing.BadSignature:
         return None

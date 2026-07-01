@@ -10,14 +10,14 @@
  * confirmé » réapparaîtra). La suppression est une action DESTRUCTIVE : on la
  * protège par une confirmation au mot de passe.
  *
- * [TODO J3-bis RGPD] Ajouter ici un bouton « Exporter mes données » (droit à la
- *   portabilité) — placeholder présent plus bas, à implémenter pendant la semaine.
+ * L'export RGPD (droit à la portabilité) est disponible dans la zone « Mes
+ *   données » (bouton actif) et rappelé dans la Zone de danger avant suppression.
  * [TODO J4] Ajouter un bouton « Signaler un contenu / un quiz » — placeholder.
  */
 import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { changePassword, deleteAccount, updateProfile } from '@/api/auth';
+import { changePassword, deleteAccount, requestDataExport, updateProfile } from '@/api/auth';
 import { getApiErrorMessage } from '@/api/errors';
 
 export default function ProfilePage() {
@@ -45,6 +45,25 @@ export default function ProfilePage() {
   const [delConfirm, setDelConfirm] = useState(false);
   const [delErr, setDelErr] = useState<string | null>(null);
   const [delLoading, setDelLoading] = useState(false);
+
+  // --- Export RGPD (portabilité) ---
+  const [exportMsg, setExportMsg] = useState<string | null>(null);
+  const [exportErr, setExportErr] = useState<string | null>(null);
+  const [exportLoading, setExportLoading] = useState(false);
+
+  const handleExport = async () => {
+    setExportMsg(null);
+    setExportErr(null);
+    setExportLoading(true);
+    try {
+      await requestDataExport();
+      setExportMsg('Un lien d’export vient de vous être envoyé par email.');
+    } catch (err) {
+      setExportErr(getApiErrorMessage(err, 'Demande d’export impossible.'));
+    } finally {
+      setExportLoading(false);
+    }
+  };
 
   const handleInfo = async (e: FormEvent) => {
     e.preventDefault();
@@ -220,20 +239,31 @@ export default function ProfilePage() {
         </form>
       </section>
 
-      {/* Placeholders RGPD / signalement (à compléter pendant la semaine) */}
+      {/* Mes données (RGPD) */}
       <section className="card bg-slate-50">
         <h2 className="text-lg font-semibold text-slate-900 mb-2">Mes données</h2>
         <p className="text-sm text-slate-500 mb-4">
-          Fonctionnalités à construire pendant la semaine APOCAL'IPSSI.
+          Vous pouvez récupérer une copie de toutes vos données (compte, profil, quiz). Un lien de
+          téléchargement sécurisé, valable 1 heure, vous sera envoyé par email.
         </p>
+        {exportMsg && (
+          <div className="mb-4 p-3 bg-emerald-50 border-l-4 border-emerald-500 text-sm text-emerald-900 rounded">
+            {exportMsg}
+          </div>
+        )}
+        {exportErr && (
+          <div className="mb-4 p-3 bg-rose-50 border-l-4 border-rose-500 text-sm text-rose-900 rounded">
+            {exportErr}
+          </div>
+        )}
         <div className="flex flex-wrap gap-3">
           <button
             type="button"
-            disabled
-            title="À implémenter (J3-bis) — droit à la portabilité RGPD"
-            className="btn-secondary opacity-60 cursor-not-allowed"
+            onClick={handleExport}
+            disabled={exportLoading}
+            className="btn-secondary"
           >
-            Exporter mes données (bientôt)
+            {exportLoading ? 'Envoi du lien…' : 'Exporter mes données'}
           </button>
           <button
             type="button"
@@ -253,6 +283,17 @@ export default function ProfilePage() {
           La suppression de votre compte est <strong>définitive</strong> et efface toutes vos
           données (quiz, historique). Cette action est irréversible.
         </p>
+        <p className="text-sm text-slate-600 mb-4">
+          Avant de supprimer, vous pouvez récupérer une copie de vos données.
+        </p>
+        <button
+          type="button"
+          onClick={handleExport}
+          disabled={exportLoading}
+          className="btn-secondary mb-4"
+        >
+          {exportLoading ? 'Envoi du lien…' : 'Exporter mes données d’abord'}
+        </button>
         {delErr && (
           <div className="mb-4 p-3 bg-rose-50 border-l-4 border-rose-500 text-sm text-rose-900 rounded">
             {delErr}

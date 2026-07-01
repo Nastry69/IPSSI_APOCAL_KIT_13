@@ -14,6 +14,7 @@ export default function SignupPage() {
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [password, setPassword] = useState('');
+  const [acceptTerms, setAcceptTerms] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -27,6 +28,7 @@ export default function SignupPage() {
         password,
         first_name: firstName || undefined,
         last_name: lastName || undefined,
+        accept_terms: acceptTerms,
       });
       await refresh();
       // Un bandeau (dans le Layout) invitera ensuite à confirmer l'email.
@@ -130,7 +132,38 @@ export default function SignupPage() {
             />
           </div>
 
-          <button type="submit" disabled={loading} className="btn-primary w-full">
+          <label className="flex items-start gap-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              required
+              checked={acceptTerms}
+              onChange={(e) => setAcceptTerms(e.target.checked)}
+              className="mt-1"
+            />
+            <span>
+              J’accepte les{' '}
+              <Link
+                to="/legal/cgu"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-indigo-600 hover:underline"
+              >
+                CGU
+              </Link>{' '}
+              et la{' '}
+              <Link
+                to="/legal/confidentialite"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-indigo-600 hover:underline"
+              >
+                politique de confidentialité
+              </Link>
+              .
+            </span>
+          </label>
+
+          <button type="submit" disabled={loading || !acceptTerms} className="btn-primary w-full">
             {loading ? 'Création du compte…' : 'Créer mon compte'}
           </button>
         </form>

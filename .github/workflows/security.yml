@@ -1,0 +1,162 @@
+# ============================================================================
+# EduTutor IA (IPSSI_APOCAL_KIT_13) — Pipeline SÉCURITÉ GitHub Actions
+# ----------------------------------------------------------------------------
+# Niveau : ESSENTIEL. Complète ci.yml sans le remplacer.
+#
+# Déclenchement :
+#   - push sur main
+#   - pull request vers main
+#   - cron hebdomadaire (lundi 06:00 UTC) : capte les nouvelles CVE
+#   - déclenchement manuel (workflow_dispatch)
+#
+# 4 jobs en parallèle :
+#   - deps-python   : pip-audit (CVE des dépendances Python)
+#   - sast-python   : bandit (analyse statique du code Python)
+#   - deps-frontend : npm audit (CVE des dépendances Node)
+#   - secrets       : gitleaks (détection de secrets sur tout le dépôt)
+#
+# DÉMARRAGE NON BLOQUANT : chaque step de scan porte `continue-on-error: true`.
+# Pour rendre un contrôle BLOQUANT : retirer la ligne `continue-on-error: true`
+# du step concerné (voir la spec, section « Stratégie non-bloquant vers bloquant »).
+# ============================================================================
+
+name: Security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Tous les lundis à 06:00 UTC (minutes heure jour-du-mois mois jour-semaine)
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+
+  # --------------------------------------------------------------------------
+  # DÉPENDANCES PYTHON — pip-audit sur requirements.txt et requirements-dev.txt
+  # --------------------------------------------------------------------------
+  deps-python:
+    name: Deps Python (pip-audit)
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: ./backend
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: backend/requirements-dev.txt
+
+      - name: Install dependencies (dont pip-audit)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Audit CVE (requirements.txt)
+        continue-on-error: true
+        run: pip-audit -r requirements.txt --desc
+
+      - name: Audit CVE (requirements-dev.txt)
+        continue-on-error: true
+        run: pip-audit -r requirements-dev.txt --desc
+
+  # --------------------------------------------------------------------------
+  # SAST PYTHON — bandit sur le code backend (tests et migrations exclus)
+  # --------------------------------------------------------------------------
+  sast-python:
+    name: SAST Python (bandit)
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: ./backend
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: backend/requirements-dev.txt
+
+      - name: Install dependencies (dont bandit)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Analyse statique (bandit)
+        continue-on-error: true
+        # -c pyproject.toml : lit [tool.bandit] (exclusions migrations/venv/fixtures)
+        # -r . : parcours récursif ; -q : sortie concise
+        # --exclude : écarte les fichiers de tests tests.py (que exclude_dirs ne
+        #   peut pas cibler). Neutralise B101 (assert) ET B105/B106 (mots de
+        #   passe de test en dur) sans affaiblir la détection sur le code applicatif.
+        run: >
+          bandit -c pyproject.toml -r . -q
+          --exclude ./accounts/tests.py,./administration/tests.py,./llm/tests.py,./quizzes/tests.py
+
+  # --------------------------------------------------------------------------
+  # DÉPENDANCES FRONTEND — npm audit (seuil high)
+  # --------------------------------------------------------------------------
+  deps-frontend:
+    name: Deps Frontend (npm audit)
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: ./frontend
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        # npm ci STRICT (sans fallback) : divergence assumée vs ci.yml, qui
+        # tolère `npm ci || npm install`. Un audit n'a de sens que sur une
+        # install parfaitement déterministe issue du lockfile.
+        run: npm ci
+
+      - name: Audit CVE (npm audit)
+        continue-on-error: true
+        run: npm audit --audit-level=high
+
+  # --------------------------------------------------------------------------
+  # SECRETS — gitleaks sur l'ensemble du dépôt (fichiers + historique)
+  # --------------------------------------------------------------------------
+  secrets:
+    name: Secrets (gitleaks)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # Historique complet nécessaire pour scanner tous les commits
+          fetch-depth: 0
+
+      - name: Scan de secrets (gitleaks)
+        continue-on-error: true
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          # Utilise l'allowlist du dépôt (.env.prod.example uniquement ;
+          # .env.example n'est PAS allowlisté tant que la vraie clé Brevo
+          # fuitée n'est pas révoquée/remplacée — cf. spec §5.1)
+          GITLEAKS_CONFIG: ${{ github.workspace }}/.gitleaks.toml

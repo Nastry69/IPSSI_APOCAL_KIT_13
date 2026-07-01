@@ -1,0 +1,32 @@
+# ============================================================================
+# EduTutor IA — Configuration gitleaks
+# ----------------------------------------------------------------------------
+# Part des règles par défaut de gitleaks (useDefault = true) et ajoute une
+# allowlist MINIMALE pour le seul fichier d'exemple ne contenant que des
+# placeholders : .env.prod.example.
+#
+# .env.example n'est PAS en allowlist : il contient une vraie clé SMTP Brevo
+# fuitée/compromise (voir spec §5.1). Il ne pourra y être ajouté qu'APRÈS
+# remédiation (révocation + remplacement par un placeholder).
+# ============================================================================
+
+title = "EduTutor IA - gitleaks config"
+
+[extend]
+# Charge le jeu de règles par défaut de gitleaks (recommandé)
+useDefault = true
+
+[allowlist]
+description = "Fichier d'exemple ne contenant que des placeholders"
+# Ignore intégralement ces chemins (regex sur le chemin relatif).
+# .env.example est VOLONTAIREMENT absent : vrai secret Brevo fuité à remédier.
+paths = [
+  '''(^|/)\.env\.prod\.example$''',
+]
+# Filet de sécurité restreint : seulement des placeholders explicites et non
+# ambigus (chaînes qui ne peuvent pas apparaître dans un vrai secret).
+# Pas de sous-chaînes larges comme "example"/"dummy" qui masqueraient un vrai
+# secret dont la valeur contiendrait ces fragments.
+regexes = [
+  '''(?i)(changeme|your[_-]?key[_-]?here)''',
+]

@@ -11,11 +11,14 @@ Endpoints d'authentification (Lot 3 : email-identifiant + validation + reset).
     POST /api/accounts/password-reset/confirm/   — définir le nouveau mot de passe
 """
 
+import json
 import logging
 
 from django.contrib.auth import login as django_login
 from django.contrib.auth import logout as django_logout
 from django.contrib.auth.models import User
+from django.http import HttpResponse
+from django.urls import reverse
 from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework import status
 from rest_framework.authtoken.models import Token
@@ -23,7 +26,13 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .emails import EmailError, send_password_reset_email, send_verification_email
+from .emails import (
+    EmailError,
+    send_export_email,
+    send_password_reset_email,
+    send_verification_email,
+)
+from .export import build_user_export
 from .models import get_or_create_profile
 from .serializers import (
     ChangePasswordSerializer,
@@ -36,7 +45,12 @@ from .serializers import (
     SignupSerializer,
     UserSerializer,
 )
-from .tokens import read_email_verify_token, read_password_reset_tokens
+from .tokens import (
+    make_export_token,
+    read_email_verify_token,
+    read_export_token,
+    read_password_reset_tokens,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +96,8 @@ class LoginView(APIView):
     # et rejette l'appel : « CSRF Failed: CSRF token missing ». Le frontend
     # s'authentifie par token, pas par session — il n'envoie pas de jeton CSRF.
     authentication_classes = []
+    # Anti-brute-force : limite le nombre de tentatives de connexion (ScopedRateThrottle).
+    throttle_scope = "login"
 
     @extend_schema(
         request=LoginSerializer, responses={200: OpenApiResponse(description="{ token, user }")}
@@ -172,6 +188,8 @@ class PasswordResetRequestView(APIView):
 
     permission_classes = [AllowAny]
     authentication_classes = []  # endpoint public : pas de CSRF via session (cf. LoginView)
+    # Anti-spam : limite le nombre de demandes de reset (ScopedRateThrottle).
+    throttle_scope = "password_reset"
 
     @extend_schema(
         request=PasswordResetRequestSerializer,
@@ -267,9 +285,9 @@ class ProfileView(APIView):
         responses={204: OpenApiResponse(description="Compte supprimé")},
     )
     def delete(self, request):
-        # Suppression DURE (hard delete) : confirmée par le mot de passe.
-        # [TODO J3-bis RGPD] Avant de supprimer, proposer un export des données
-        #   personnelles (droit à la portabilité). Voir Lot futur "export RGPD".
+        # Suppression DURE (hard delete) confirmée par mot de passe. L'export RGPD
+        # (droit à la portabilité) est disponible via /api/accounts/export/request/
+        # et rappelé côté front dans la Zone de danger avant suppression.
         serializer = DeleteAccountSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
 
@@ -303,3 +321,65 @@ class ChangePasswordView(APIView):
         Token.objects.filter(user=user).delete()
         token = Token.objects.create(user=user)
         return Response({"detail": "Mot de passe modifié.", "token": token.key})
+
+
+# ---------------------------------------------------------------------------
+# Export RGPD (droit à la portabilité, art. 20) — asynchrone par lien email
+# ---------------------------------------------------------------------------
+
+
+class RequestExportView(APIView):
+    """Demande d'export RGPD : envoie par email un lien de téléchargement temporaire."""
+
+    permission_classes = [IsAuthenticated]
+    # Anti-abus : limite le nombre de demandes d'export (ScopedRateThrottle).
+    throttle_scope = "export"
+
+    @extend_schema(responses={200: OpenApiResponse(description="Lien d'export envoyé par email")})
+    def post(self, request):
+        user = request.user
+        token = make_export_token(user)
+        download_url = request.build_absolute_uri(reverse("export-download")) + "?token=" + token
+        # Best-effort : on ne bloque pas si l'email ne part pas (mode console en dev,
+        # clé Brevo expirée en prod). Réponse GÉNÉRIQUE dans tous les cas.
+        try:
+            send_export_email(user, download_url)
+        except EmailError as exc:
+            logger.warning("Email d'export non envoyé pour %s : %s", user.email, exc)
+        return Response(
+            {
+                "detail": "Un lien de téléchargement de vos données vient de vous "
+                "être envoyé par email. Il est valable 1 heure."
+            }
+        )
+
+
+class DownloadExportView(APIView):
+    """Téléchargement de l'export : authentifié PAR LE TOKEN signé (pas par session)."""
+
+    permission_classes = [AllowAny]
+    authentication_classes = []  # endpoint public : l'autorisation vient du token signé
+
+    @extend_schema(responses={200: OpenApiResponse(description="Fichier JSON en pièce jointe")})
+    def get(self, request):
+        token = request.query_params.get("token", "")
+        uid = read_export_token(token)
+        if uid is None:
+            return Response(
+                {"detail": "Lien d'export invalide ou expiré."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            user = User.objects.get(pk=uid)
+        except User.DoesNotExist:
+            return Response(
+                {"detail": "Lien d'export invalide ou expiré."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # On ne renvoie QUE les données de l'utilisateur encodé dans le token.
+        data = build_user_export(user)
+        payload = json.dumps(data, ensure_ascii=False, indent=2)
+        response = HttpResponse(payload, content_type="application/json; charset=utf-8")
+        response["Content-Disposition"] = 'attachment; filename="mes-donnees-edututor.json"'
+        return response
